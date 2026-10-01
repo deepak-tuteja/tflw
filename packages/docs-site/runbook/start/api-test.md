@@ -96,7 +96,7 @@ reuse[RF001]: 2 occurrences of a similar 3-step sequence
 
 Besides problems, `check` looks for the same steps repeated across tests and offers to make them
 one `action`. The first two tests both place an order and check its status and total, so `check`
-offers to extract those three steps. That is a **hint**, with an id, and it never changes the exit
+offers to extract those three steps. That is a **[hint](/runbook/glossary#hint)**, with an id, and it never changes the exit
 code. The third test is not offered, though it places an order too: its next step `capture`s from
 that order's response, which an extracted action would keep to itself.
 
@@ -180,6 +180,10 @@ declaration:
   action
 …
 ```
+
+What the language leaves out is as deliberate as what it has: a test has no `if`, no loop and no
+boolean operator. That line is the [fence](/runbook/glossary#fence). A step that needs logic calls a
+helper module through `use`, and [the escape hatch](/guide/actions) shows how.
 
 ## You now have
 

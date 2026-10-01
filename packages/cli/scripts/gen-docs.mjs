@@ -36,8 +36,14 @@ export function slugify(title) {
 
 function headingTitle(raw) {
   let title = raw;
-  title = title.replace(/\s*(✅|🔧|🔮)\s*$/u, ''); // trailing status marker
-  title = title.replace(/\s*\([^)]*\)\s*$/, '').trim(); // trailing "(P#..)"/"(TFLW-GAPS.md ...)"
+  // Trailing status markers and "(P#..)"/"(TFLW-GAPS.md ...)" parentheticals, repeated until none is
+  // left: a marker can sit between two of them (`Distribution (P#35–39, …) 🔧 (the publish waits …)`),
+  // and one pass of each printed `Distribution (P#35–39, amended by P#41–50) 🔧` to a new user (M262).
+  for (let prev = ''; prev !== title; ) {
+    prev = title;
+    title = title.replace(/\s*(✅|🔧|🔮)\s*$/u, '');
+    title = title.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  }
   // …and the same parenthetical when SPEC wraps it onto the next line, so the heading text ends
   // mid-clause: `### 6.2.1 Contract validation — … (PLAN decision 102a,`. Harmless while `title`
   // was only ever a lookup key; visible the moment `tflw docs` started printing it (M125e/`FU-29`).

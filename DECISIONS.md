@@ -427,7 +427,7 @@ here.
 
 ### P#35
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 35. **Ambition — build public-grade, publish when proven.** Public GitHub repo and
     npm-publishable layout from day one (README/docs written for a stranger, semver discipline),
@@ -482,7 +482,7 @@ here.
 
 ### P#41
 
-<sub>cited from SPEC.md · lifted from `PLAN.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN.md`</sub>
 
 41. **Publish gate re-scoped to an API-only acceptance (amends P#35).** The M7 verdict
     (side-by-side vs raw *Playwright*) is inherently a browser-era comparison and now gates
@@ -10218,7 +10218,7 @@ under it. *Not taken:* by file with passing files folded; no list on Run at all.
 
 ### D1411
 
-<sub>cited from tflw-tests/scripts/lib/ui-budgets.mjs · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
 
 **`D1411` — Paper and Terminal ship; density is a switch.** (`D-RC-13`) The picker offers Paper (light,
 the stranger's default per `D1315`) and Terminal (dark). A `compact` toggle tightens `--unit` by
@@ -10263,6 +10263,43 @@ test last run beyond `runs keep N` has no verdict. `.last-run.json` is still wri
 nothing in tflw — retiring it is §8.3's twelfth item. *Not taken:* keeping `--failed` on the last run and
 drawing the chip from it (a red dot outside the `failed` chip — two answers to *what failed*);
 the chip as a view filter that runs whole files (▶ would run passing tests).
+
+### D1416
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`D1416` — the runbook's commands run in CI (asked; recommendation taken)**
+
+A fence tagged ` ```sh runbook ` is **executed** by a new gate, `verify:runbook`:
+- in a fresh temp directory;
+- against the CLI packed from the commit under test (the same tarball the Action dry-run installs);
+- in page order, so the directory accumulates state the way a reader's does.
+
+### D1417
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`D1417` — the Coffee Shelf ships, through `tflw init --example` (asked; recommendation taken)**
+
+`tflw init --example` writes the Coffee Shelf into the current directory: `server.mjs`, the order
+page's three files, `tests/`, `tflw.config`, and a `package.json` script (`"shop": "node
+server.mjs"`) if a `package.json` exists. **One source**: `examples/storefront/` stays canonical, and
+`bundle.mjs` copies it into `dist/example/` at build. `packages/lang/test/exampleCoverage.test.ts`
+therefore still holds the shipped copy to "every statement" with no second corpus.
+
+### D1421
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`D1421` — the small CLI defects the walk-through found**
+
+- **`G6`:** the `authz coverage` line prints only when the suite declares at least one session.
+  Before that it has nothing to judge and nothing to say. The wording loses "unjudgeable" and the
+  SPEC section number, and names the fix (`as <session>`) in the reader's words.
+- **`G7`:** the `--browser` help reads *"the engine to launch: chromium (default), firefox or
+  webkit"*.
+- **`G8`:** `runbook/project.md`'s layout section says what `init` writes (`example.tflw` at the
+  root) and how a project grows into `tests/`, instead of implying `init` writes the grown layout.
 
 ### M0
 
@@ -14737,9 +14774,39 @@ milestone it waits on. Both files are gitignored; the repositories are public.
   reader is absent, which it will not be after `M253`).
 - **D docs.** `ui/a-run.md` re-cut; `runbook/page.md`'s run section.
 
+### M258
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`M254`–`M258` — the page re-cut**
+
+**Sequenced after `M253`.** `M250`–`M253` are being built in a parallel session on `m250-t4` and
+the stack `#258`→`#262` is open. This plan branches from `main` once that stack and `M251`–`M253`
+have merged, because it edits the two files `M250` is editing now (`parts.tsx`, `ComposePane.tsx`)
+and re-cuts every docs picture `M253` will have just re-shot. The one thing the parallel session
+should know today: **a page re-cut follows `M253`; do not start a new page surface beyond what the
+`M247` plan names.**
+
+### M259
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M259` — the example ships, and the gate (`D1416`, `D1417`, `D1419`, `D1421`)**
+
+- `A` `init --example`: `bundle.mjs` copies `examples/storefront/` into `dist/example/`, and `init`
+  writes it. Tests: a non-empty directory is refused, `--force` works, the written tree matches the
+  source byte for byte (minus `report/`), and the `SHOP_URL`/`PORT` overrides work.
+- `B` `verify:runbook`: the fence runner, the normalisations, the manual count, and the three
+  negative controls. Wired into `npm test` and the Linux Node 22 job with `xvfb-run`.
+- `C` `G1`: the pre-1.0 install path behind the flag, plus `DECLARED_ROADMAP` entries.
+- `D` `G6`, `G7`, each with a test that pins the new text.
+- **Green:** `init --example && npm run shop & tflw run` passes 35 of 35 (`--tag functional`; §8 item 4) from a packed tarball in a
+  fresh directory, in CI. `verify:runbook` goes red on each of its three controls and green on the
+  unchanged tree.
+
 ### M260
 
-<sub>cited from SPEC.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
 
 **`M260` — the walkthrough, CLI half (`D1415`, `D1418` chapters 1–6, 8–10, `G2`, `G4`, `G5`, `G8`)**
 
@@ -14750,5 +14817,31 @@ milestone it waits on. Both files are gitignored; the repositories are public.
 - **Green:** all 17 commands appear in a `runbook` fence or a declared `runbook-manual` one, and the
   gate's manual count is printed and ≤ 3. `verify:runbook` passes the whole walkthrough in CI.
   `tflw://demo` is explained where `init` introduces it.
+
+### M261
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M261` — the page chapter (`D1418` chapter 7, `G3`); after `M258`**
+
+- Chapter 7 is written against the re-cut page. Its pictures come from new `make-screenshots` states
+  taken on the Coffee Shelf at each step the chapter narrates.
+- `runbook/page.md` becomes chapter 7's reference companion. Each section links its `ui/` page.
+- `ui` is driven in the gate with `--no-open`: the token URL is read and the page's `/api` answered.
+  The clicks remain the page's own e2e tests' job.
+- **Green:** chapter 7 has at least one picture per step. Every `ui/` page is linked from chapter 7 or
+  `page.md`. The screenshot manifest is fresh.
+
+### M262
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M259`–`M262` — the new user's runbook**
+
+**Why it exists.** The owner's words: *"the runbook that exists on the docs-site is very primitive —
+hardly any detailed information — no mention of UI — it shall be improved comprehensively."* What
+they meant by a runbook is **the whole of tflw, CLI and page, for a new user**. It is not a
+maintainer's book; that one left both public repositories the same day (`D1350` amended, tflw#268 /
+tflw-tests#132).
 
 <!-- GENERATED:decisions:end -->

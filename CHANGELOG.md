@@ -17,6 +17,69 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — the glossary is the walkthrough's, and troubleshooting grows by symptom (M262)
+
+- **The glossary defines the words the walkthrough uses, and each is linked where a chapter first
+  uses it.** Seventeen terms, each its own heading: nine new (*authorized target*, *clock*,
+  *crawl*, *env*, *flaky*, *seed*, *threshold*, *token*, *workload*), and five the walkthrough never
+  uses dropped. `verify-sidebars` fails a term no chapter links, and a link to a term the glossary
+  does not have.
+- **Troubleshooting gains the failures writing the walkthrough hit**, by what you see: a run that
+  ends `INCONCLUSIVE`, a test that passes once and fails the next time, a reuse hint not offered,
+  `TF060`, `pick`/`record`/`watch` with no display, `pick /path` with no `web`, and the `404` from
+  `npm install` before 1.0.
+- **`tflw docs` no longer prints `Distribution (P#35–39, amended by P#41–50) 🔧`.** A status marker
+  between two trailing parentheticals survived one pass of each strip; the heading is now
+  *Distribution* (topic `distribution`), and a test holds every title and group the real SPEC
+  produces to carry no `P#`, decision id or status marker.
+- **Fixed:** chapter 8 and *The editor* packaged the extension to `packages/vscode/tflw.vsix` and then
+  installed `tflw.vsix` from the clone's root, which does not exist; the `.vsix` is now written where
+  the install reads it. Found by a second walk-through that copied every command from the published
+  pages.
+
+### Added — chapter 7, the page (M261)
+
+- **Chapter 7 teaches the page with a failure**: it starts `tflw ui --no-open`, changes a status in
+  Compose, writes it, runs it with ▶, reads *expected status to equal 200, but got 202* on Run, and
+  puts it back, with a `tflw run` that proves the file is clean. Four new pictures of that sequence
+  (`walk-edit`, `walk-failed`, `walk-run`, `walk-config`), shot after every other view against a shop
+  the script starts itself.
+- `verify:runbook` sends a page a background step printed `GET /api/project` with its token, and
+  fails when nothing answers. `verify-sidebars` checks every `/ui/` page is linked from chapter 7 or
+  `runbook/page.md`, and that chapters are numbered 1–N.
+
+### Added — the walkthrough's CLI chapters (M260)
+
+- **Chapters 3–6 and 8–10** on the Coffee Shelf: the first run and its report, an API test of your
+  own (`fmt`, `check`, `refactor apply`), a browser test (`pick`, `record`, `watch`), load and scan,
+  the editor, CI, and your own service. Every command is run by `verify:runbook` and every output
+  block is copied from a run. `runbook/index.md` is the contents page.
+- **`tflw pick` and `tflw record` take a path** (`/order`) and open it against `tflw.config`'s `web`.
+- A load run's first line names the `workload`, not the old keyword `scenario`; `tflw check`'s hint
+  header no longer prints a plan id; `--trace` has its row in the flag reference, and a test holds
+  every flag `run` parses to having one.
+- **Fixed:** the Coffee Shelf's checkout tests mint their idempotency keys with `unique`, so a second
+  run against the same shop no longer replays the first order (`M260-01`).
+
+### Added — `tflw init --example`, and the walkthrough's commands are run (M259)
+
+- **`tflw init --example`** writes the Coffee Shelf, a small shop and its suite, into the current
+  directory, refusing to overwrite unless `--force`, and adds a `shop` script to `package.json`. The
+  shop and its config both read `SHOP_URL` (`D1417`).
+- **`verify:runbook`** runs every `sh runbook` fence of *Start here*, in chapter order, in one fresh
+  directory against the CLI packed from this tree, and compares each output block after a listed set
+  of normalisations (`D1416`). Chapters 1 (Install) and 2 (The example) are its first corpus.
+- A run prints `authz coverage` only once the config declares a session (`D1421`).
+- **Fixed:** `npm run shop` exited 0 without starting on Windows and through a symlink (`M259-06`);
+  a docs page's roadmap declaration did not match on Windows (`M259-07`).
+
+### Changed — two themes and compact (M258)
+
+- The theme picker offers **Paper** and **Terminal**, with a **compact** switch on either (`D1411`).
+  Instrument and Ribbon stay reachable through `?theme=` and are never stored.
+- Every `ui/` page and `runbook/page.md` was read against the built page and corrected, and the
+  screenshots re-cut.
+
 ### Changed — a run is read as a tree by verdict, and draws itself where you are (M257)
 
 - **Run is a tree by verdict** (`D1409`). One headline, one verdict — `1 FAILED · 16 passed ·

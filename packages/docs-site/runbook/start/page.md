@@ -26,7 +26,7 @@ tflw ui — . at http://127.0.0.1:4141/?token=Kq8Zw (loopback only, this URL car
 ```
 
 Open the address it printed. Leave out `--no-open` and `tflw ui` opens it for you. The address
-carries a **token** minted for this start, and the page refuses any request without it. The page
+carries a **[token](/runbook/glossary#token)** minted for this start, and the page refuses any request without it. The page
 listens on loopback only, so nothing else on your network can reach it, and a new start means a new
 token: an old address stops working.
 
@@ -37,9 +37,11 @@ token: an old address stops working.
 
 Across the top is one **header**: the project, the env a run reads, **▶** with what it will run,
 and on the right **Auth**, **Config**, `?` for the keys, and the theme. Down the left is the file
-list, and over it the four **kinds** as chips: **API**, **BROWSER**, **LOAD** and **SCANS**, with
+list, and over it the four **[kinds](/runbook/glossary#kind)** as chips: **API**, **BROWSER**, **LOAD** and **SCANS**, with
 `all` in front and `failed` at the end. A chip is a count and a filter at once. Press **LOAD** and
-the list shows only the files holding a load test, and ▶ runs only those.
+the list shows only the files holding a load test, and ▶ runs only those. The header, the list with
+its chips and the tabs over the open file are the page's [spine](/runbook/glossary#spine): they stay put whatever
+you open.
 
 ![The kind chips over the file list, each with what it counts in this project](/ui/kinds-paper.png){.light-only}
 ![The kind chips over the file list, each with what it counts in this project](/ui/kinds-terminal.png){.dark-only}

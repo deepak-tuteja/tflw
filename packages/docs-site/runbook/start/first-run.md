@@ -27,7 +27,7 @@ npx tflw run tests/catalogue.tflw
 
 Each line starts with the time it was printed. Pass `--no-timestamps` if you would rather not see
 it. A passing test is one line: `✓`, its name and how long it took. The last line is the
-**verdict**: how many passed, the env it ran under, the **seed** and the **clock**. Pass that seed
+**[verdict](/runbook/glossary#verdict)**: how many passed, the env it ran under, the **[seed](/runbook/glossary#seed)** and the **[clock](/runbook/glossary#clock)**. Pass that seed
 back with `--seed`, and the same clock with `--now`, and generated values come out the same again,
 which is how a failure that depends on data is reproduced.
 
@@ -48,13 +48,14 @@ runs
 
 - **`report.html`** is the report, one self-contained file. Open it in a browser: every test, every
   step, the request and the response for each API step, and a screenshot for each browser step that
-  failed. It needs no server and can be attached to a ticket as it is.
+  failed: the run's [evidence](/runbook/glossary#evidence). It needs no server and can be attached to a ticket
+  as it is.
 - **`results.json`** is the same run as data, for a script, a dashboard or `tflw merge`.
 - **`junit.xml`** is the format every CI system draws as a test list.
 - **`findings.sarif`** appears when a scan ran. GitHub's code scanning reads it.
 - **`runs/`** keeps every run, newest last. The page and `--failed` read it, and so does the
   history beside each test in the report: a test that changed verdict between two runs of the same
-  file is marked **flaky**. `runs keep N` in `tflw.config` says how many to keep (50 when it says
+  file is marked **[flaky](/runbook/glossary#flaky)**. `runs keep N` in `tflw.config` says how many to keep (50 when it says
   nothing), and `--no-keep` skips keeping one.
 
 `results.json` is ordinary JSON, so any tool can read it. This prints the verdict and the counts:

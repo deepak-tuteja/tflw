@@ -232,6 +232,34 @@ for (const { page, link, group } of PILLAR_OVERVIEWS) {
   }
 }
 
+// `M262`: the glossary defines the walkthrough's words, and only those. Every `## Term` in
+// `runbook/glossary.md` is linked (`/runbook/glossary#term`) from some chapter of `runbook/start/`,
+// at the place the reader first meets it, and every such link names a term the glossary has. A
+// whole-word match would not do: `window` is in the walkthrough, as a browser window, and the entry
+// it would have kept was about load windows.
+{
+  const slug = (h) => h.toLowerCase().replace(/[`]/g, '').replace(/[^a-z0-9\s-]/g, '').trim().replace(/\s+/g, '-');
+  const glossary = await readFile(join(ROOT, 'runbook', 'glossary.md'), 'utf8').catch(() => '');
+  const terms = [...glossary.matchAll(/^## (.+)$/gm)].map((m) => slug(m[1]));
+  const chapters = (await readdir(join(ROOT, 'runbook', 'start'))).filter((f) => f.endsWith('.md'));
+  const linked = new Set();
+  for (const f of chapters) {
+    const text = await readFile(join(ROOT, 'runbook', 'start', f), 'utf8');
+    for (const m of text.matchAll(/\]\(\/runbook\/glossary#([a-z0-9-]+)\)/g)) linked.add(m[1]);
+  }
+  const orphans = terms.filter((t) => !linked.has(t));
+  const dangling = [...linked].filter((t) => !terms.includes(t));
+  if (terms.length === 0 || orphans.length > 0 || dangling.length > 0) {
+    const why = terms.length === 0 ? 'no `## ` terms found'
+      : orphans.length > 0 ? `linked from no chapter of runbook/start/: ${orphans.map((t) => `#${t}`).join(', ')}`
+      : `a chapter links a term the glossary does not have: ${dangling.map((t) => `#${t}`).join(', ')}`;
+    console.error(`✗ runbook/glossary.md — ${why}`);
+    failures++;
+  } else {
+    console.log(`✓ runbook/glossary.md — all ${terms.length} terms are linked from the walkthrough where it first uses them`);
+  }
+}
+
 if (failures > 0) {
   console.error(`\n${failures} sidebar assertion(s) failed.`);
   process.exit(1);

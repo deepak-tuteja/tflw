@@ -48,10 +48,10 @@ env local default
 
 - **`defaults`** apply to every env. `timeout api 5s` is how long one request may take;
   `viewport 900 600` is the browser window's size.
-- **`authorized target`** names the one origin a scan may send requests nobody wrote. `tests/scan.tflw`
+- **[`authorized target`](/runbook/glossary#authorized-target)** names the one origin a scan may send requests nobody wrote. `tests/scan.tflw`
   crawls the shop, and tflw refuses to crawl anything the config has not named, with a reason a
   reviewer can read. The chapter on load and scan comes back to it.
-- **`env local default`** is the env a plain `tflw run` uses. `api` is where `api GET /items`
+- **`env local default`** is the [env](/runbook/glossary#env) a plain `tflw run` uses. `api` is where `api GET /items`
   goes; `web` is where `open "/"` goes.
 - **`env SHOP_URL default "…"`** reads the variable `SHOP_URL` and falls back to the address after
   `default`. The shop reads the same variable, so if something on your machine already has port

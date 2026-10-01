@@ -8,6 +8,15 @@ per code with what it means and an example.
 Start with `npx tflw doctor`: it reports the config, env, services, proxy, TLS, suite and browsers a
 run would use, and exits 1 with the fix for the three things that stop every run.
 
+<Published :when="false">
+
+## Installing
+
+**`npm install -D tflw` answers `404`.** tflw is not on npm yet. Build the package from a clone and
+install the `.tgz` it writes, as [chapter 1](/runbook/start/install) does.
+
+</Published>
+
 ## A request fails before it reaches the service
 
 **A certificate error** on a staging host with a self-signed or expired certificate: prefer adding
@@ -31,6 +40,28 @@ env whose own base URL is missing from its list as `TF036`.
 set. Set them in the shell, or in `.env` at the project root for local work — a real environment
 variable wins over `.env`.
 
+## A run
+
+**It ends `INCONCLUSIVE` and exits 3.** A load test's own generator was the bottleneck: the service
+answered faster than tflw could send, which is usual for a service on the same machine, so tflw
+reports no verdict rather than numbers about itself. It is not a pass. Run the load tests from
+another machine, or leave them out of a functional run with `--tag` or `--kind`. See
+[Load results](/guide/load-results).
+
+**A test passes once and fails the next time.** The first run left data the second collides with:
+an order under the same idempotency key, a user with the same email. Make the values that must not
+repeat with `unique`, which never repeats within a run or across runs. A literal repeats every run,
+and so does a `random` value under the same `--seed`. See [`unique` vs. `random`](/guide/variables#unique-vs-random).
+
+**`tflw check` does not offer a reuse hint for steps you can see repeated.** A test whose next step
+captures from a response inside those steps is left out of the hint, because an extracted `action`
+would keep that response to itself. The other tests that repeat them are still offered it, as in
+[chapter 4](/runbook/start/api-test#check-everything-except-running).
+
+**A scan or a crawl is refused with `TF060`.** `tflw.config` does not name the address it would
+send requests to. Add an `authorized target` line with a reason, and only for a service you are
+allowed to scan. See [`authorized target`](/guide/config#authorized-target-—-what-this-suite-may-scan).
+
 ## A browser test cannot start
 
 **No browser is downloaded.** `npx tflw install-browsers` downloads the ones the suite's UI steps use;
@@ -39,6 +70,14 @@ browser's system libraries: `npx playwright install --with-deps chromium` instal
 
 **It passes headed and fails in CI.** A CI machine has no display for a headed browser; tflw runs
 headless unless `--headed` is given, so a CI job that passes `--headed` needs `xvfb-run -a` in front.
+
+**`pick`, `record` or `watch` cannot open a window.** They open a visible browser, so they need a
+display: on a machine you reach over SSH, or in a container, run them under `xvfb-run -a` on Linux,
+or on your own desktop.
+
+**`tflw pick /order` is refused with *has no `web` line*.** A path is opened against the `web` of
+the env in `tflw.config`. Add `web` to that env, or give an absolute URL. Run it from the project's
+directory: with no `tflw.config` there, a path has nothing to be opened against.
 
 ## The page
 
