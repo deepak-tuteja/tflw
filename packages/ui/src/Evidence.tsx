@@ -21,6 +21,7 @@ import type { CaptureSpec, ExpectSpec, MatcherName, Workload } from '@tflw/lang'
 import { PlanPanel } from './PlanPanel';
 import { ScanPanel, type Authorization } from './ScanPanel';
 import { ResponsePanel, ago, statusTone, type Ran } from './parts';
+import { reportFileUrl } from './api';
 import type { OutlineRequest, Prefix, SendForm } from './outline';
 
 /** The column's tenants, in the order their tabs are drawn (`D1406`). */
@@ -72,13 +73,18 @@ export interface EvidenceProps {
   /** The picked browser step's group from the last run, and what to call it — the `screenshot`
    *  tenant. `ran` is `null` when the step has not run. */
   readonly shot: { readonly ran: Ran | null; readonly what: string } | null;
-  /** A recording in progress — the column FOLLOWS it (`D1408`). Until `M257` `A` lands the live
-   *  frame feed, the follow mode says where the live page is and shows the last static frame. */
+  /** A recording in progress — the column FOLLOWS it (`D1408`): it says where the live page is (the
+   *  browser window the recorder opened) and keeps the last static frame under that line. */
   readonly recording: { readonly into: string; readonly pending: number } | null;
+  /** A run the column is following — `M257` `A` (`D1407`): the group it is showing, and whether the
+   *  run is still going or rests on the step that failed. */
+  readonly following: { readonly line: number; readonly status: 'running' | 'passed' | 'failed' | 'cancelled' } | null;
+  /** The picked test's trace in the last run — the stage's link, moved here (`D1407`). */
+  readonly trace: { readonly path: string; readonly reportId: string; readonly open: () => void } | null;
 }
 
 export function Evidence(props: EvidenceProps) {
-  const { path, tenants, tab, onTab, plan, authorization, scanMatchers, onProjectTab, shown, shownRequest, picked, sentHere, sent, onPickSent, prefix, prefixAll, onSend, sending, busy, scratchUnignored, onVerify, onCapture, shot, recording } = props;
+  const { path, tenants, tab, onTab, plan, authorization, scanMatchers, onProjectTab, shown, shownRequest, picked, sentHere, sent, onPickSent, prefix, prefixAll, onSend, sending, busy, scratchUnignored, onVerify, onCapture, shot, recording, following, trace } = props;
   const sendPrefix = prefix ?? prefixAll;
   const response = shown?.response ?? null;
   /** Below `evidence full` the body is the runtime's placeholder, not the service's answer (`D987`). */
@@ -97,11 +103,17 @@ export function Evidence(props: EvidenceProps) {
         </nav>
       ) : null}
 
+      {following === null ? null : (
+        <p className="muted evidence-follow" data-evidence-follow="run" data-evidence-follow-line={following.line}>
+          {following.status === 'running' ? `following the run · line ${following.line}` : `the run failed here · line ${following.line} — pick a row to leave it`}
+        </p>
+      )}
+
       {tab === 'plan' && plan !== null ? <PlanPanel path={path} name={plan.name} workload={plan.workload} /> : null}
 
       {tab === 'scan' ? <ScanPanel authorization={authorization} matchers={scanMatchers} onAuth={() => onProjectTab('auth')} onConfig={() => onProjectTab('config')} /> : null}
 
-      {tab === 'screenshot' ? <Shot shot={shot} recording={recording} /> : null}
+      {tab === 'screenshot' ? <Shot shot={shot} recording={recording} trace={trace} /> : null}
 
       {tab !== 'response' ? null : response !== null && shown !== null && shownRequest !== null ? (
         <>
@@ -224,17 +236,18 @@ export function Evidence(props: EvidenceProps) {
 }
 
 /**
- * **The `screenshot` tenant** — `M256` `B`/`C` (`D1406`, `D1408`).
+ * **The `screenshot` tenant** — `M256` `B`/`C` (`D1406`, `D1408`), and the trace's since `M257` `A`.
  *
  * The page as the last run saw it at the picked step: the first frame its group recorded, which is
  * where the runtime puts an explicit `screenshot` and a failing step's capture (`D12`). A clean
  * step takes none, and the tab says so rather than drawing an empty frame.
  *
- * **While a recording runs the tab FOLLOWS it.** `M257` `A` brings the live frame feed; until it
- * lands the column says where the live page is — the browser window the recorder opened — and keeps
- * the last static frame under that line, which is `M256` `C`'s stated stub.
+ * **While a recording runs the tab FOLLOWS it**: the column says where the live page is — the
+ * browser window the recorder opened — and keeps the last static frame under that line. A run's
+ * frames arrive with its steps (`D1407`); a recording's gestures carry none, so there is no live
+ * frame to show and the line says where to look instead.
  */
-function Shot({ shot, recording }: { readonly shot: EvidenceProps['shot']; readonly recording: EvidenceProps['recording'] }) {
+function Shot({ shot, recording, trace }: { readonly shot: EvidenceProps['shot']; readonly recording: EvidenceProps['recording']; readonly trace: EvidenceProps['trace'] }) {
   const frame = shot?.ran?.screenshot ?? null;
   return (
     <div className="shot-panel" data-evidence-shot={frame === null ? 'none' : 'frame'}>
@@ -254,6 +267,16 @@ function Shot({ shot, recording }: { readonly shot: EvidenceProps['shot']; reado
       ) : recording !== null ? null : (
         <p className="muted" data-evidence-shot-none>
           {shot === null ? 'pick a browser step to see the page it left' : 'no screenshot from the last run here — a failing step or a `screenshot` takes one'}
+        </p>
+      )}
+      {/* **The trace is the screenshot tab's** (`D1407`) — every action of the last run, its DOM and
+          its network, opened in the Run tab's viewer; the file, for a reader who wants it. */}
+      {trace === null ? null : (
+        <p className="muted" data-evidence-trace={trace.path}>
+          <button type="button" className="linkish" onClick={trace.open} data-evidence-open-trace data-tip="the last run's Playwright trace of this test — every action, its DOM and its network">
+            open trace
+          </button>{' '}
+          · <a href={reportFileUrl(trace.reportId, trace.path)} download data-evidence-trace-download>trace.zip</a>
         </p>
       )}
     </div>

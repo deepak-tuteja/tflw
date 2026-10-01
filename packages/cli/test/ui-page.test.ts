@@ -70,7 +70,7 @@ const RM_RETRY = { recursive: true, force: true, maxRetries: 10, retryDelay: 100
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Server } from 'node:http';
+import { createServer as createHttpServer, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { chromium, type Browser, type Locator, type Page } from 'playwright';
 import { UiServer, SCRATCH_PATH, type HistoryView, type ReportEntry } from '../src/ui-server.js';
@@ -310,7 +310,7 @@ const setup = stagedSetup(async () => {
   page = await newPage();
   // `M234`. Inert unless this run is under `npm run coverage`; see `./ui-coverage.ts` for why the
   // 203 tests below counted toward nothing until now.
-  await startUiCoverage(page);
+  await startUiCoverage(page, 'page');
 });
 
 before(setup.begin);
@@ -319,7 +319,7 @@ after(async () => {
   await setup.settled(); // `M237` `A1` — see `scripts/test-staging.mjs`
   // Before `browser.close()` (the page is the source) and before `rm(scratch)` (the bundle is read
   // out of it and copied somewhere that outlives this process). `M234`.
-  if (page !== undefined) await stopUiCoverage(page, join(scratch, 'ui'), 'page');
+  if (page !== undefined) await stopUiCoverage(page, join(scratch, 'ui'));
   await browser?.close();
   await server?.close();
   /* `M235` `A1b`, **AMENDED BY `M237` `A1` — THE DIAGNOSIS IN THIS BLOCK WAS WRONG, AND THE
@@ -375,21 +375,46 @@ after(async () => {
    read; the docblock ended *`S2`–`S5` dissolve the form, and this helper goes with the last of
    it*, which is what happened, two rounds later than that sentence expected. */
 
-/** `Grip`'s `STAGE.fallback` — `.stage-frame`'s own floor since `M221`, which is what makes
- *  `Home` a restoration rather than a new number. Stated here rather than imported so the gate
- *  fails when the two drift apart instead of following them. */
-const STAGE_FALLBACK = 620;
-
 const API_DOOR = '#/';
 const API_RUN = '#/run';
 
 /** The functional entries of a report — the workload kind carries metrics, not steps (U4). */
 const functional = (report: RunReport): TestResult[] => report.tests.filter((t): t is TestResult => t.kind === 'functional');
 
+/** `M257` `B` (`D1409`) — the runs are behind the picker (`run 7d ago ▾`): open it, then pick. */
+async function pickRun(row: string, p: Page = page): Promise<void> {
+  const picker = p.locator('[data-run-picker]');
+  await picker.waitFor();
+  if (!(await picker.evaluate((el) => (el as unknown as { open: boolean }).open))) await picker.locator(':scope > summary').click();
+  await p.locator(row).click();
+}
+
 async function openReport(id: string): Promise<void> {
   await page.goto(`${pageUrl}${API_RUN}`);
-  await page.locator(`[data-report-row="${id}"]`).click();
+  await pickRun(`[data-report-row="${id}"]`);
   await page.locator(`[data-report="${id}"]`).waitFor();
+}
+
+/**
+ * `M257` `B` (`D1409`) — one test of the open run, drawn on the right. The tree folds `passed`, so
+ * the test's group is opened first when it is folded; what comes back is the detail section, which
+ * is the one place a test's steps are drawn now.
+ */
+async function openRunTest(name: string, p: Page = page): Promise<Locator> {
+  const row = p.locator(`[data-tree-test][data-name="${name}"]`).first();
+  await row.waitFor({ state: 'attached' });
+  const group = p.locator(`[data-tree-group="${await row.getAttribute('data-tree-test')}"]`);
+  if (!(await group.evaluate((el) => (el as unknown as { open: boolean }).open))) await group.locator(':scope > summary').click();
+  await row.click();
+  const section = p.locator(`.run-detail [data-test][data-name="${name}"]`);
+  await section.waitFor();
+  return section;
+}
+
+/** `M257` `C` (`D1409`) — the findings are the tree's `security` row, drawn on the right when picked. */
+async function openSecurity(p: Page = page): Promise<void> {
+  await p.locator('[data-tree-security]').click();
+  await p.locator('[data-findings]').waitFor();
 }
 
 test('the sidebar is the project as a tree: every file the server read, a leaf name per row, and the kind chips as counts and filter (`D1399`)', async () => {
@@ -502,6 +527,8 @@ test('the sidebar is the project as a tree: every file the server read, a leaf n
 
 test('the run list is the report directories, each row carrying its own results.json counts', async () => {
   await page.goto(`${pageUrl}${API_RUN}`);
+  // `M257` `B` (`D1409`): behind the picker, which the tab opens on the newest run.
+  await page.locator('[data-run-picker] > summary').click();
   for (const id of ['full', 'headers']) {
     const row = page.locator(`[data-report-row="${id}"]`);
     await row.waitFor();
@@ -513,19 +540,21 @@ test('the run list is the report directories, each row carrying its own results.
 test('the functional view renders every test, step, detail, status and body the report holds', async () => {
   const report = oracle.full!;
   await openReport('full');
+  // `M257` `B` (`D1409`): one verdict in the headline, and every other group a count. The headline's
+  // own gate is `M257`'s below; this one holds the report's facts.
   const head = page.locator('[data-summary]');
-  assert.equal(await head.locator('[data-verdict]').textContent(), report.ok ? 'PASS' : 'FAIL');
-  assert.equal(await head.locator('[data-counts]').textContent(), `${report.total} tests · ${report.passed} passed · ${report.failed} failed`);
-  assert.equal(await head.locator('[data-env]').textContent(), report.env);
+  assert.equal(await head.locator('[data-verdict]').getAttribute('data-verdict'), report.failed > 0 ? 'FAILED' : report.ok ? 'PASSED' : 'INCONCLUSIVE');
+  assert.equal(await page.locator('[data-env]').textContent(), report.env);
   assert.equal(await page.locator('[data-evidence-level]').count(), 0, 'a full report states no evidence caveat');
 
-  assert.equal(await page.locator('[data-test]').count(), report.tests.length);
+  // The tree holds every test of the report once; the right-hand side draws the one picked.
+  assert.equal(await page.locator('[data-tree-test]').count(), report.tests.length);
   let assertionsSeen = 0;
   let bodiesSeen = 0;
   for (const entry of report.tests) {
     if (entry.kind !== 'functional') continue; // the workload kind has its own tests below (U4)
     const t = entry;
-    const section = page.locator(`[data-test][data-name="${t.name}"]`);
+    const section = await openRunTest(t.name);
     assert.equal(await section.count(), 1, `${t.name} rendered once`);
     assert.equal(await section.getAttribute('data-ok'), String(t.ok));
     assert.equal(await section.locator('[data-test-name]').textContent(), t.name);
@@ -567,8 +596,15 @@ test('at `evidence headers only` the page states the level and shows the marker 
   const level = page.locator('[data-evidence-level]');
   assert.equal(await level.count(), 1, 'the level is stated once');
   assert.equal(await level.getAttribute('data-evidence-level'), report.evidenceLevel);
-  const bodies = await page.locator('[data-body]').allTextContents();
-  // In the page's order: a test's prior attempts are folded above its final steps.
+  // `M257` `B`: one test at a time on the right, so each is opened and read in turn. In the page's
+  // order: a test's prior attempts are folded above its final steps.
+  const bodies: string[] = [];
+  let headers = 0;
+  for (const t of functional(report)) {
+    const section = await openRunTest(t.name);
+    bodies.push(...(await section.locator('[data-body]').allTextContents()));
+    headers += await section.locator('[data-response] [data-headers]').count();
+  }
   const held = functional(report)
     .flatMap((t) => [...(t.attempts ?? []).slice(0, -1).flatMap((a) => a.steps), ...t.steps])
     .filter((s) => s.response)
@@ -576,7 +612,7 @@ test('at `evidence headers only` the page states the level and shows the marker 
   assert.ok(held.length > 0 && held.every((b) => b === '[omitted by evidence level]'), 'the corpus is a headers-only run');
   assert.deepEqual(bodies, held);
   // Headers are still there — the level withholds bodies, not headers.
-  assert.ok((await page.locator('[data-response] [data-headers]').count()) > 0);
+  assert.ok(headers > 0);
 });
 
 test('WebUI at `evidence full`: the screenshot a step took, the failure shot, and the trace handed to Playwright\'s viewer', async () => {
@@ -585,7 +621,7 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   const shots = functional(report).flatMap((t) => t.steps.filter((s) => s.screenshot).map((s) => ({ test: t.name, step: s })));
   assert.ok(shots.length >= 2 && shots.some((x) => x.step.ok) && shots.some((x) => !x.step.ok), 'the corpus has an explicit screenshot and a failure-first one');
   for (const { test: name, step } of shots) {
-    const row = page.locator(`[data-test][data-name="${name}"] [data-step][data-line="${step.line}"]`);
+    const row = (await openRunTest(name)).locator(`[data-step][data-line="${step.line}"]`);
     const img = row.locator('[data-screenshot]');
     assert.equal(await img.count(), 1, `${name} line ${step.line}: one screenshot`);
     assert.equal(await img.getAttribute('src'), `data:image/png;base64,${step.screenshot!.base64}`);
@@ -608,7 +644,7 @@ test('WebUI at `evidence full`: the screenshot a step took, the failure shot, an
   }
   const traced = functional(report).filter((t) => t.trace);
   assert.equal(traced.length, 1, 'the failed browser test kept its trace; the passing one did not');
-  const section = page.locator(`[data-test][data-name="${traced[0]!.name}"]`);
+  const section = await openRunTest(traced[0]!.name);
   const line = section.locator('[data-trace]');
   await line.waitFor();
   const path = (await line.getAttribute('data-trace'))!;
@@ -725,21 +761,23 @@ test('`M239` `C`: every door draws under the page\'s Content-Security-Policy wit
 test('WebUI at `evidence headers only`: no screenshot, no trace, and the sentence saying why, under every browser test', async () => {
   const report = oracle.headers!;
   await openReport('headers');
-  assert.equal(await page.locator('[data-screenshot]').count(), 0);
-  assert.equal(await page.locator('[data-trace]').count(), 0);
   const browserTests = functional(report).filter((t) => t.steps.some((s) => s.kind === 'open'));
   assert.equal(browserTests.length, 2, 'the corpus has two browser tests');
   assert.ok(browserTests.every((t) => !t.trace && t.steps.every((s) => !s.screenshot)), 'the run withheld them (FS-01)');
-  const withheld = page.locator('[data-evidence-withheld]');
-  assert.equal(await withheld.count(), browserTests.length);
+  // `M257` `B`: each browser test is opened in turn, and each says why it has no evidence.
   for (const t of browserTests) {
-    const p = page.locator(`[data-test][data-name="${t.name}"] [data-evidence-withheld]`);
-    assert.equal(await p.getAttribute('data-evidence-withheld'), report.evidenceLevel);
+    const section = await openRunTest(t.name);
+    assert.equal(await section.locator('[data-screenshot]').count(), 0);
+    assert.equal(await section.locator('[data-trace]').count(), 0);
+    assert.equal(await section.locator('[data-evidence-withheld]').getAttribute('data-evidence-withheld'), report.evidenceLevel);
   }
+  // NEGATIVE CONTROL: a test with no browser step does not carry the sentence.
+  const plain = functional(report).find((t) => !t.steps.some((s) => s.kind === 'open'))!;
+  assert.equal(await (await openRunTest(plain.name)).locator('[data-evidence-withheld]').count(), 0);
   // The `screenshot` step itself says it was not captured — the runtime's words, shown as its detail.
   const shotStep = browserTests[0]!.steps.find((s) => s.kind === 'screenshot')!;
   assert.match(shotStep.detail ?? '', /not captured \(evidence level\)/);
-  assert.equal(await page.locator(`[data-test][data-name="${browserTests[0]!.name}"] [data-step][data-line="${shotStep.line}"] [data-detail]`).textContent(), shotStep.detail);
+  assert.equal(await (await openRunTest(browserTests[0]!.name)).locator(`[data-step][data-line="${shotStep.line}"] [data-detail]`).textContent(), shotStep.detail);
 });
 
 // ---- U4: the workload kind -----------------------------------------------------------------
@@ -798,10 +836,16 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
   assert.ok(loads.length >= 2, 'the corpus has two workload tests');
   assert.ok(loads.some((t) => t.ok) && loads.some((t) => !t.ok), 'one passes its thresholds and one breaches');
   await openReport('full');
-  assert.equal(await page.locator('[data-test][data-kind="workload"]').count(), loads.length);
+  let breaches = 0;
+  const actuals: string[] = [];
   for (const t of loads) {
-    const section = page.locator(`[data-test][data-kind="workload"][data-name="${t.name}"]`);
+    // `M257` `B`: each workload is a row of the tree, drawn on the right when picked.
+    assert.equal(await page.locator(`[data-tree-test][data-name="${t.name}"]`).count(), 1, `${t.name} is in the tree once`);
+    const section = await openRunTest(t.name);
+    assert.equal(await section.getAttribute('data-kind'), 'workload');
     assert.equal(await section.getAttribute('data-ok'), String(t.ok));
+    breaches += await section.locator('[data-threshold][data-ok="false"]').count();
+    actuals.push(...(await section.locator('[data-threshold] [data-actual]').allTextContents()));
     assert.equal((await section.locator('[data-workload-shape]').textContent())?.trim(), describeWorkload(t.workload));
     assert.equal(await section.locator('[data-compared-with]').count(), 0, 'nothing is compared until asked');
     for (const [key, read] of Object.entries(STATS)) {
@@ -835,11 +879,11 @@ test('the workload view: the shape, every stat, every threshold and every endpoi
   // read `metrics.successful` would pass reading `metrics.durations` (U7: they did, until the
   // fixture's failing call became its slow one).
   assert.ok(loads.some((t) => t.metrics.successful.durations.p95 !== t.metrics.durations.p95 || t.metrics.successful.durations.p99 !== t.metrics.durations.p99), 'a workload whose successful-only percentiles differ from the whole population\'s');
-  assert.ok((await page.locator('[data-threshold][data-ok="false"]').count()) >= 1);
-  assert.ok((await page.locator('[data-threshold] [data-actual]').allTextContents()).some((s) => s.includes('%')));
+  assert.ok(breaches >= 1);
+  assert.ok(actuals.some((s) => s.includes('%')));
   // Sorting the endpoint table: by p95 ascending, then descending, is the oracle's order.
   const multi = loads.find((t) => t.endpoints.length > 1)!;
-  const section = page.locator(`[data-test][data-kind="workload"][data-name="${multi.name}"]`);
+  const section = await openRunTest(multi.name);
   const byP95 = [...multi.endpoints].sort((a, b) => a.metrics.durations.p95 - b.metrics.durations.p95).map((e) => e.identity);
   assert.notDeepEqual(byP95, [...byP95].reverse(), 'the endpoints differ in p95, so the sort is observable');
   const p95Header = section.locator('[data-endpoints] th', { hasText: /^p95/ });
@@ -909,8 +953,10 @@ test('the charts are the report\'s timeline and histogram: painted, one point pe
   const long = loads.find((t) => t.metrics.timeline.length >= 3)!;
   const short = loads.find((t) => t.metrics.timeline.length === 1)!;
   assert.ok(long && short, 'the corpus has a multi-second run and a one-second run');
+  let breaches = 0;
   for (const t of loads) {
-    const section = page.locator(`[data-test][data-kind="workload"][data-name="${t.name}"]`);
+    const section = await openRunTest(t.name);
+    breaches += await section.locator('[data-threshold][data-ok="false"]').count();
     const n = t.metrics.timeline.length;
     for (const id of ['latency', 'throughput', 'errors']) {
       const chart = section.locator(`[data-chart="${id}"]`);
@@ -939,7 +985,7 @@ test('the charts are the report\'s timeline and histogram: painted, one point pe
   // by the report and not by the cursor.
   const p95s = long.metrics.timeline.map((p) => dur(p.p95));
   assert.ok(new Set(p95s).size > 1 || new Set(long.metrics.timeline.map((p) => String(p.rps))).size > 1, 'the run is not flat');
-  assert.ok((await page.locator('[data-threshold][data-ok="false"]').count()) >= 1);
+  assert.ok(breaches >= 1);
   assert.ok(short.metrics.errorRate > 0, 'the one-second run has an error rate to plot');
 });
 
@@ -948,14 +994,14 @@ test('two report directories side by side: the compared run\'s figures in every 
   const b = oracle.headers!;
   await openReport('full');
   await page.locator('[data-compare]').selectOption('headers');
-  await page.locator('[data-compared-with="headers"]').first().waitFor();
   const loadsA = workloads(a);
-  assert.equal(await page.locator('[data-compared-with="headers"]').count(), loadsA.length);
   let deltasSeen = 0;
   for (const t of loadsA) {
     const o = workloads(b).find((x) => x.name === t.name)!;
     assert.ok(o, `${t.name} is in both runs`);
-    const section = page.locator(`[data-test][data-kind="workload"][data-name="${t.name}"]`);
+    const section = await openRunTest(t.name);
+    await section.locator('[data-compared-with="headers"]').waitFor();
+    assert.equal(await section.locator('[data-compared-with="headers"]').count(), 1, `${t.name}: compared once`);
     for (const [key, read] of Object.entries(STATS)) {
       const row = section.locator(`[data-stat="${key}"]`);
       assert.equal((await row.locator('[data-value]').textContent())?.trim(), read(t.metrics), `${key}: this run`);
@@ -1000,6 +1046,7 @@ test('two report directories side by side: the compared run\'s figures in every 
   await page.locator('[data-compare]').selectOption('headers');
   await page.locator('[data-compared-with="headers"]').first().waitFor();
   await openReport('headers');
+  await openRunTest(loadsA[0]!.name);
   assert.equal(await page.locator('[data-compared-with]').count(), 0, 'a comparison does not follow the selection');
   assert.equal(await page.locator('[data-compare]').inputValue(), '');
 });
@@ -1012,6 +1059,9 @@ test('the findings block: every finding the report holds, grouped by rule in the
     const findings = report.findings ?? [];
     assert.ok(findings.length >= 2, `${id}: the corpus holds findings`);
     await openReport(id);
+    // `M257` `C`: the tree's `security` row names the count and the worst severity, and opens the block.
+    assert.match((await page.locator('[data-tree-security]').textContent()) ?? '', new RegExp(`^security · ${findings.length} findings · worst ${sortFindings(findings)[0]!.severity} ▸$`));
+    await openSecurity();
     const block = page.locator('[data-findings]');
     assert.equal(await block.getAttribute('data-findings-count'), String(findings.length));
     assert.equal((await block.locator('[data-findings-summary]').textContent())?.trim(), findingsSummaryLine(findings));
@@ -1089,6 +1139,7 @@ test('two runs\' findings side by side: the same finding\'s verdict in the other
   const a = oracle.full!.findings!;
   const b = oracle.headers!.findings!;
   await openReport('full');
+  await openSecurity();
   await page.locator('[data-compare]').selectOption('headers');
   await page.locator('[data-findings-compared="headers"]').waitFor();
   let differs = 0;
@@ -1126,8 +1177,10 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
     await kept.waitFor({ timeout: 60_000 });
     const id = (await kept.getAttribute('data-report'))!;
     const written = JSON.parse(await readFile(join(root, 'report', 'runs', id, 'results.json'), 'utf8')) as RunReport;
-    assert.equal(await page.locator('[data-summary] [data-counts]').textContent(), `${written.total} tests · ${written.passed} passed · ${written.failed} failed`);
-    assert.equal(await page.locator('[data-test]').count(), written.tests.length);
+    // `M257` `B` (`D1409`): the tree holds the report's tests, and its groups are the report's counts.
+    assert.equal(await countSettling(page, '[data-tree-test]', written.tests.length), written.tests.length);
+    assert.equal(await countSettling(page, '[data-tree-test="failed"]', written.failed), written.failed);
+    assert.equal(await countSettling(page, '[data-tree-test="passed"]', written.passed), written.passed);
     // What was asked is what ran: `@catalog` is three of the five tests, and the argv says so.
     const runs = (await (await api(`${baseUrl}/api/runs`)).json()) as { argv: string[]; status: string; exitCode: number | null; kept: string }[];
     assert.equal(runs.length, 1);
@@ -1137,7 +1190,7 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
     assert.equal(written.total, 3);
     // U7: exit 0/1 is the report's own verdict, so no note about the process appears.
     assert.ok(runs[0]!.exitCode === (written.ok ? 0 : 1));
-    assert.equal(await page.locator('[data-run-exit]').count(), 0);
+    assert.equal(await countSettling(page, '[data-run-exit]', 0), 0);
     assert.ok(written.tests.every((t) => t.file === 'tests/catalog.tflw'));
     // And the run list gained the row, with the run's own counts.
     const row = page.locator(`[data-report-row="${id}"]`);
@@ -1146,16 +1199,24 @@ test('a run from the page: the live pane fills from the stream, and the kept dir
     // and compared with `full`, every finding there is absent here, listed as what full has that
     // this run does not (U5's absent branch, which the two corpora alone cannot show).
     assert.equal(written.findings, undefined);
-    assert.equal(await page.locator('[data-finding]').count(), 0);
-    if ((await page.locator('[data-findings]').count()) > 0) assert.match((await page.locator('[data-findings-summary]').textContent())!, /^no findings/);
+    assert.equal(await countSettling(page, '[data-finding]', 0), 0);
+    // `M257` `C`: the `security` row is there only for what the block would say — here an
+    // authorized target — so where it is drawn, it says there is nothing found.
+    // one-shot: the tree's test rows are established above, and the row is drawn with them
+    if ((await page.locator('[data-tree-security]').count()) > 0) assert.match((await page.locator('[data-tree-security]').textContent())!, /^security · no findings/);
     await openReport('full');
+    await openSecurity();
     await page.locator('[data-compare]').selectOption(id);
     await page.locator(`[data-findings-compared="${id}"]`).waitFor();
-    assert.equal(await page.locator('[data-in-compared="absent"]').count(), oracle.full!.findings!.length);
+    assert.equal(await countSettling(page, '[data-in-compared="absent"]', oracle.full!.findings!.length), oracle.full!.findings!.length);
     assert.equal((await page.locator('[data-since]').first().textContent())?.trim(), `not in ${id}`);
     await openReport(id);
-    assert.equal(await page.locator('[data-finding]').count(), 0);
+    assert.equal(await countSettling(page, '[data-finding]', 0), 0);
     await page.locator('[data-compare]').selectOption('full');
+    // Compared with a run that had findings, this one's `security` row appears — to say what went.
+    // Waited for, not read once: the compared run's report is fetched after the pick.
+    await page.locator('[data-tree-security]').filter({ hasText: new RegExp(`no findings · ${oracle.full!.findings!.length} gone since the compared run`) }).waitFor();
+    await openSecurity();
     await page.locator('[data-findings-gone]').waitFor();
     assert.equal(await page.locator('[data-findings-gone]').getAttribute('data-findings-gone'), String(oracle.full!.findings!.length));
     assert.deepEqual(await page.locator('[data-finding-gone]').evaluateAll((els) => els.map((e) => e.getAttribute('data-finding-gone'))), sortFindings(oracle.full!.findings!).map((f) => f.fingerprint));
@@ -1280,12 +1341,12 @@ test('a run that could not start: the live pane keeps its exit and stderr, drawn
   // (`running !== done`, 2026-09-17). The claim is unchanged; it now waits for the page to have
   // heard, which is the thing it meant to assert all along.
   const row = page.locator(`[data-run-row="${run.id}"][data-status="done"]`);
-  await row.waitFor();
+  await row.waitFor({ state: 'attached' }); // behind the picker (`M257` `B`)
   assert.equal(await row.getAttribute('data-exit'), String(run.exitCode));
   assert.match((await row.textContent())!, new RegExp(`exit ${run.exitCode} · no report`));
   await openReport('full');
   assert.equal(await page.locator(`[data-run-row="${run.id}"]`).count(), 1, 'the row survives a selection elsewhere');
-  await page.locator(`[data-run-row="${run.id}"]`).click();
+  await pickRun(`[data-run-row="${run.id}"]`);
   await page.locator(`[data-live="${run.id}"] [data-stderr]`).waitFor({ timeout: 30_000 });
   await openMore();
   await page.locator('[data-workers]').fill('');
@@ -1464,8 +1525,9 @@ test('a report holding the same finding many times renders one row saying how ma
     const port = await ui.listen(0);
 
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}${API_RUN}`);
-    await fresh.locator('[data-report-row="dupes"]').click();
+    await pickRun('[data-report-row="dupes"]', fresh);
     await fresh.locator('[data-report="dupes"]').waitFor();
+    await openSecurity(fresh);
 
     const group = fresh.locator(`[data-rule="${one.rule}"]`);
     // The heading counts JUDGEMENTS, because that is what the run did and what `results.json` holds.
@@ -1496,8 +1558,9 @@ test('a report holding the same finding many times renders one row saying how ma
     // measured 3,455,656 px on 29,381 rows — ~118 px each — so 401 rows would have been ~47,000.
     const tall = await fresh.locator('.main').evaluate((el) => el.scrollHeight);
     await fresh.goto(`http://127.0.0.1:${port}/?token=${TOKEN}${API_RUN}`);
-    await fresh.locator('[data-report-row="plain"]').click();
+    await pickRun('[data-report-row="plain"]', fresh);
     await fresh.locator('[data-report="plain"]').waitFor();
+    await openSecurity(fresh);
     const control = await fresh.locator('.main').evaluate((el) => el.scrollHeight);
     assert.equal(tall, control, `401 judgements cost what 2 do: ${tall}px vs ${control}px`);
   } finally {
@@ -2953,7 +3016,7 @@ test('`M240` `F` (`M239-04`): the new-step dialog refuses an empty field, and wr
 test('`M240` `F` (`M239-05`): a run chip is relative, its tip is the absolute form with the zone, and the report head spells the same instant', async () => {
   await page.goto(`${pageUrl}${API_RUN}`);
   await page.reload();
-  await page.locator('[data-report-row="full"] [data-run-when]').waitFor();
+  await page.locator('[data-report-row="full"] [data-run-when]').waitFor({ state: 'attached' }); // behind the picker (`M257` `B`)
   const chip = page.locator('[data-report-row="full"] [data-run-when]');
   // The row's instant is the directory's own `at` (this suite touches `results.json` at setup, so
   // it is not the oracle's `startedAt`); the claim is about the spelling, not about which instant.
@@ -2973,12 +3036,13 @@ test('`M240` `F` (`M239-05`): a run chip is relative, its tip is the absolute fo
   }, s);
   assert.equal(tip, await spelled(iso));
   // And the report's own head spells ITS instant — `startedAt` — the same way: two places, one
-  // rule, no `7:56:44 PM`.
-  await page.locator('[data-report-row="full"]').click();
+  // rule, no `7:56:44 PM`. (`M257` `B`: the picker beside it carries the age; the head the instant.)
+  await pickRun('[data-report-row="full"]');
   await page.locator('[data-report="full"]').waitFor();
-  const head = (await page.locator('[data-report="full"] .report-head').first().textContent()) ?? ''; // one-shot: the report's presence is established by the wait above and its head is part of that render
-  const headExpected = await spelled(oracle['full']!.startedAt);
-  assert.ok(head.includes(headExpected), `the report head (${head.trim().slice(0, 120)}) does not carry ${headExpected}`);
+  const started = page.locator('[data-report="full"] [data-run-started]');
+  assert.equal(await started.getAttribute('data-run-started'), oracle['full']!.startedAt);
+  assert.equal((await started.textContent())?.trim(), await spelled(oracle['full']!.startedAt));
+  const head = (await page.locator('[data-report="full"] .run-head').first().textContent()) ?? ''; // one-shot: the report's presence is established by the wait above and its head is part of that render
   assert.doesNotMatch(head, /\d\/\d+\/\d{4}, |[AP]M\b/, 'the head still spells the locale form');
 });
 
@@ -2989,16 +3053,21 @@ test('`M240` `F` (`M239-06`): two failures are two notices, top-right; one close
   for (const d of dirs) {
     await mkdir(d, { recursive: true });
     await writeFile(join(d, 'results.json'), JSON.stringify(oracle['full']));
+    // Dated in the past: the shell opens the NEWEST run on its first load, and the notices under
+    // test are the two opens below — not that first read of a directory about to vanish, which
+    // raced the `rm` whenever these were the newest.
+    await utimes(join(d, 'results.json'), new Date('2020-01-01T00:00:00Z'), new Date('2020-01-01T00:00:00Z'));
   }
   const fresh = await newPage();
   try {
     await fresh.clock.install();
     await fresh.goto(`${pageUrl}${API_RUN}`);
-    await fresh.locator('[data-report-row="gone-b"]').waitFor();
+    await fresh.locator('[data-report-row="gone-b"]').waitFor({ state: 'attached' });
+    await fresh.locator('[data-report]').waitFor();
     for (const d of dirs) await rm(d, RM_RETRY);
-    await fresh.locator('[data-report-row="gone-a"]').click();
+    await pickRun('[data-report-row="gone-a"]', fresh);
     await fresh.locator('[data-notice]').first().waitFor();
-    await fresh.locator('[data-report-row="gone-b"]').click();
+    await pickRun('[data-report-row="gone-b"]', fresh);
     await fresh.locator('[data-notices="2"]').waitFor();
     // Neither overwrote the other, and the layer is the page's, not the run pane's.
     assert.equal(await fresh.locator('[data-notice]').count(), 2); // one-shot: `[data-notices="2"]` above has established the population
@@ -3064,7 +3133,7 @@ test('`M240` `F` (`M239-08`): a run started outside the page is followed without
   await page.goto(`${pageUrl}${API_RUN}`);
   await page.clock.install();
   await page.reload();
-  await page.locator('[data-report-row="full"]').waitFor();
+  await page.locator('[data-report-row="full"]').waitFor({ state: 'attached' });
   try {
     // 1. On the Run tab, looking at a report: the next list read finds the run running, and the
     //    pane follows it — no click.
@@ -3812,6 +3881,8 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
       for (const tab of ['compose', 'source', 'run', 'auth', 'config'] as const) {
         await sized.locator(tab === 'auth' || tab === 'config' ? `[data-header-panel="${tab}"]` : `[data-tab="${tab}"]`).click();
         await sized.locator(`[data-tabstrip="${tab}"]`).waitFor();
+        // Run is measured with the fixture's report drawn, or the parity is between empty panes.
+        if (tab === 'run') await sized.locator('[data-report] [data-tree-test]').first().waitFor();
         // `M243-09`: read once the height has SETTLED. Config holds a CodeMirror editor since `M241`,
         // and its measured height lands a frame or two after the strip does — this read took 948 or
         // 900 on the same tree, API on one run and LOAD on the next, on Linux and on Windows alike.
@@ -3949,7 +4020,9 @@ test('LOAD now measures what a door with a strip measures — tab for tab, again
     // writes a thirteen-request file and holds every region's bottom edge to the fold, in all four
     // themes, which is the property the 1.50-screen bar could never state.
     assert.ok(api.compose! <= 900, `API's Compose is three regions that scroll inside themselves, so the shell does not scroll (${api.compose} px)`);
-    assert.ok(load.run! > 900, 'Run fits in a screen, so this fixture has no report and the parity above is between three empty panes');
+    // This read `load.run > 900` — *a report is taller than a screen, so a Run that fits one has no
+    // report* — until `M257` `B` (`D1409`) folded the report into a tree that fits a screen by
+    // design. That the fixture has a report is now waited for where Run is measured, above.
 
     // The control this gate needs to mean anything: the instrument can read an overflow at all.
     // Without it `=== 900` is one CSS change away from being the same vacuous assertion the
@@ -4201,6 +4274,7 @@ test('[accept] stages a finding into the baseline and opens it — and writes no
   assert.deepEqual(before.accepted.map((a) => a.fingerprint), ['d1a3ef65f88fb550'], 'the fixture starts with one accepted finding');
 
   await openReport('headers');
+  await openSecurity();
   // Offered on the finding that is gating, and NOT on the one the baseline already withholds —
   // accepting what is already accepted is a button with nothing behind it.
   assert.equal(await page.locator('[data-accept-finding="f9ea851f1285230b"]').count(), 1);
@@ -4251,6 +4325,7 @@ test('[accept] under an env with no baseline says what to declare, rather than f
   // server's own sentence about what is missing. A page that hid the affordance would leave the
   // commonest state — a project that has not adopted triage — with no route into adopting it.
   await openReport('full');
+  await openSecurity();
   await page.locator('[data-accept-finding="d1a3ef65f88fb550"]').click();
   await page.locator('[data-api-config-problem]').waitFor();
   const said = (await page.locator('[data-api-config-problem]').textContent()) ?? '';
@@ -4364,16 +4439,16 @@ test('`M213` `S4`: the BROWSER door composes — `+ open`, `+ click`, and the ro
   await writeFile(join(root, target), before, 'utf8');
 });
 
-test('`M221` `A`+`B`: the stage is under the columns with room for the viewer, and ▶ no longer refuses an unsaved buffer', async () => {
+test('`M221` `B` + `M257` `A`: the stage has retired, the columns claim the window at rest, and ▶ no longer refuses an unsaved buffer', async () => {
   /**
-   * **THE STAGE** — `M221` `A` (`D1181`), which amends `D1179`.
+   * **THE STAGE IS GONE** — `M257` `A` (`D1407`), which retires `D1181`'s region.
    *
-   * `M220` put the viewer in the Run tab and argued the placement from one number: the viewer
-   * compresses to a floor of **606 px** and the editor column is 460–860 px depending on where
-   * `COMPOSE`'s grip has been dragged. That is true of the column and false of the region under
-   * it — measured on the live page at 1440x900, `main` is 1114 px and `elementFromPoint` below the
-   * columns returned `main` itself, i.e. nothing was there. So the width claim is the one this
-   * gate holds, because it is the claim the placement was overturned on.
+   * `M221` put a playback region under both columns because the trace viewer's 606 px floor did not
+   * fit beside them. `D1407` answers the same need differently: a run draws itself in the rows and
+   * the evidence column follows it, and the trace is one link in the `screenshot` tab, opened in
+   * Run's viewer where it has the pane to itself. So at rest there is nothing under the columns —
+   * no bar, no hint, no frame — and the columns reach the bottom of the window (`D1193`'s claim,
+   * which the stage's bar used to spend 18 px of).
    */
   await page.goto(`${pageUrl}#/`);
   await page.reload();
@@ -4383,124 +4458,13 @@ test('`M221` `A`+`B`: the stage is under the columns with room for the viewer, a
   await page.locator('[data-compose-summary]').waitFor();
   const before = await readFile(join(root, target), 'utf8');
   try {
-    const stage = page.locator('[data-stage]');
-    await stage.waitFor();
-    assert.equal(await stage.getAttribute('data-stage'), 'empty', 'nothing has been played, so there is no trace to draw');
-    /* `D1187` — the region says which of its states it is in rather than being absent. A stage
-       that rendered `null` before the first play would grow the page by 700 px on the press. */
-    assert.equal(await page.locator('[data-stage-hint]').count(), 1, 'the stage is drawn dead');
-    assert.match((await page.locator('[data-stage-hint]').textContent())!, /press ▶/, 'the hint does not say what would fill it');
-    assert.equal(await page.locator('[data-stage-frame]').count(), 0, 'a frame with no trace behind it');
-
-    /**
-     * **`M223` `A` gates 1 and 2 (`D1193`, `D1194`) — the stage is a LINE before a run, and the
-     * page ends where the window does.**
-     *
-     * `M221` gave this region a height of its own so a 620 px viewer would not be squeezed into
-     * what was left over, and that is still true the moment there is a viewer. What it also did,
-     * invisibly, was spend **183 px** on a dashed box around a sentence while the authoring
-     * columns above it had 239 px to share and **278 px of the window below it went to nobody**
-     * (measured, 1440x900, `PLAN_M223` §1.1). Both numbers are asserted here rather than the
-     * layout that produces them: a region sized by its content, and a page that ends at the fold.
-     *
-     * The mutation for gate 2 is restoring `.stage-hint`'s padded, bordered block — the height
-     * goes back over 100. The mutation for gate 1 is giving the stage a fixed height again, or
-     * taking `main-fill` back to `door === 'api'`: the gap returns to 278.
-     */
-    /* **It reads the BAR, and the first draft read the whole region and was wrong for a reason
-       worth keeping.** This fixture's project does not `.gitignore` its play scratch, so the stage
-       is also carrying `D1076`'s *▶ writes `.play.tflw` beside the test* sentence — a paragraph
-       this round did not touch and has no business gating. Measuring the section measured that
-       too (73 px), which is a true number about something else. The claim `D1194` actually makes
-       is that the hint is a MEMBER OF THE BAR rather than a block under it, so the reading is the
-       bar's own height and the hint's own rectangle sitting inside it. */
-    const rest = await page.locator('[data-stage]').evaluate((el) => {
-      const bar = el.querySelector('.stage-bar')!.getBoundingClientRect();
-      const hint = el.querySelector('[data-stage-hint]')!.getBoundingClientRect();
-      return {
-        bar: bar.height,
-        inBar: hint.top >= bar.top - 1 && hint.bottom <= bar.bottom + 1,
-        below: el.ownerDocument.documentElement.clientHeight - el.getBoundingClientRect().bottom,
-        frame: el.querySelector('[data-stage-frame]') !== null,
-      };
-    });
-    assert.equal(rest.frame, false, 'this reading is only about the state with nothing played');
-    assert.equal(rest.inBar, true, 'the hint is drawn below the bar rather than in it — `.stage-hint`’s block is back');
-    assert.ok(rest.bar <= 24, `the stage bar is ${Math.round(rest.bar)}px before a run — it is meant to be one line, not a region`);
-    assert.ok(rest.below < 24, `${Math.round(rest.below)}px of the window below the stage belongs to nobody — the columns are meant to claim it`);
-
-    /**
-     * The measurement the amendment rests on. `606` is the viewer's own floor, measured in `M220`.
-     *
-     * **BOTH RECTANGLES COME OUT OF ONE `evaluate`, and that is not tidiness.** The first draft
-     * took two `boundingBox()` calls and read *stage y 242, foot y 469* — a later sibling above
-     * its own predecessor, which no layout can produce. The two calls are two round trips and
-     * therefore two moments, and the sequence column is still growing as the outline arrives
-     * between them: the stage's y was stale by the height the column had yet to gain. It passed
-     * when the test ran alone, because alone the page had settled first — which is the worst
-     * shape a gate can have, since the green run is the one that tells you nothing.
-     *
-     * So the wait is for a row of the sequence to exist (the thing whose arrival moves everything
-     * below it), and the measurement is one synchronous pass over both elements.
-     */
-    /* **THE PANE COMES BACK BLANK AFTER IT HAS ALREADY DRAWN, SO A `waitFor` IS NOT ENOUGH.**
-       `M221` waited on `[data-seq-row]` — the element whose arrival moves everything below it —
-       and that is a proxy that *disappears again*. Measured over the whole file rather than this
-       test alone: `{stage y 241.9, foot null, editor null, rows 0}`, with `[data-compose-pane]`
-       and `[data-compose-state]` present and `[data-compose-summary]`/`[data-seq]` gone — the
-       pane back in its placeholder **after** the summary this test already waited for had
-       rendered. Clicking the file row appends `?files=tests/shop.tflw` to the hash a beat later,
-       the file-read effect runs a second time, and the pane blanks for that fetch. Waiting on
-       `[data-seq-foot]` and `[data-editor]` first does not help: they are true, then false.
-
-       So the wait is on **the measurement itself being coherent**, which is the only condition
-       that cannot be true one moment and false the next in a way this gate cares about. Bounded,
-       and the last reading is what the refusal prints — a timeout here is a real failure with its
-       own diagnosis rather than a hang.
-
-       The callback going INTO the page stays anonymous and binds no arrow to a variable
-       (`M222-01`): tsx's keep-names transform wraps any function expression with an inferred name
-       in a call to `__name`, which exists in the test process and not in the browser. `read`
-       below is Node-side and therefore free of it, and `root.ownerDocument` carries the DOM types
-       `tsconfig.test.json` does not have (`types: ["node"]`, no DOM lib — the same reason the two
-       focus checks in this file ask a `:focus` locator instead of `document.activeElement`).
-
-       Still ONE round trip per reading, which is the point `M221` established: `boundingBox()`
-       twice is two moments, and a sequence column still gaining height between them is what made
-       this gate read a stage 227 px above its own predecessor and pass when run alone. */
-    const read = () =>
-      page.locator('body').evaluate((root) => {
-        /* `M256` (`D1406`) — the right-hand column is the evidence now; it is what the stage was
-           refused beside, so it is what the stage's width is compared to. */
-        const [stage, foot, editor] = ['[data-stage]', '[data-seq-foot]', '[data-evidence-col]'].map((sel) => {
-          const el = root.querySelector(sel);
-          if (el === null) return null;
-          const b = el.getBoundingClientRect();
-          return { x: b.x, y: b.y, w: b.width, h: b.height };
-        });
-        return {
-          stage: stage ?? null,
-          foot: foot ?? null,
-          editor: editor ?? null,
-          at: {
-            hash: root.ownerDocument.location.hash,
-            rows: root.querySelectorAll('[data-seq-row]').length,
-            state: root.querySelector('[data-compose-summary]') === null ? 'placeholder' : 'drawn',
-          },
-        };
-      });
-    let geom = await read();
-    for (let i = 0; i < 50 && (geom.stage === null || geom.foot === null || geom.editor === null); i++) {
-      await page.waitForTimeout(100);
-      geom = await read();
-    }
-    const { stage: stageBox, foot: footBox, editor: editorBox } = geom;
-    assert.ok(stageBox !== null && footBox !== null, `the stage or the sequence foot is not on the page at all — ${JSON.stringify(geom)}`);
-    assert.ok(stageBox.w >= 606, `the stage is ${Math.round(stageBox.w)} px — below the trace viewer's 606 px floor, which is the number D1179 refused this placement on`);
-    // …and it is BELOW both columns, not beside them, which is what buys that width.
-    assert.ok(stageBox.y >= footBox.y, `the stage is not under the sequence column — ${JSON.stringify(geom)}`);
-    // The claim `D1181` is actually made of: wider than the editor column it was refused from.
-    assert.ok(editorBox !== null && stageBox.w > editorBox.w, `the stage (${Math.round(stageBox.w)}) is no wider than the evidence column (${Math.round(editorBox?.w ?? 0)}), so it buys nothing`);
+    await page.locator('[data-seq-row]').first().waitFor();
+    assert.equal(await countSettling(page, '[data-stage], [data-stage-hint], [data-stage-frame]', 0), 0, 'the stage is still drawn');
+    // Nothing is running, so there is no status line either — it is the run's, not a region's.
+    assert.equal(await countSettling(page, '[data-play-status]', 0), 0, 'a status line with no run behind it');
+    // One synchronous read of the pane against the window (`M221`'s two-round-trip lesson).
+    const below = await page.locator('[data-compose-pane]').evaluate((el) => el.ownerDocument.documentElement.clientHeight - el.getBoundingClientRect().bottom);
+    assert.ok(below < 24, `${Math.round(below)}px of the window below the columns belongs to nobody — the columns are meant to claim it`);
 
     /**
      * **▶ RUNS THE BUFFER** — `M221` `B` (`D1183`), overturning `D1177`.
@@ -5651,6 +5615,8 @@ test('a directory that is not a project: pick LOAD, get one, write a test into i
     await fresh.locator('[data-tab="run"]').click();
     await fresh.locator('[data-tabstrip="run"]').waitFor();
     await fresh.locator('[data-report]').waitFor({ timeout: 60_000 });
+    // `M257` `B` (`D1409`): a run that passed opens on no test, so the one the page wrote is picked.
+    await openRunTest('the health check under load', fresh);
     /* `M235` `E` — **the one HIGH the `ATTACH-ONLY` rule turned up, and it is `M227` `A`'s recorded
        shape at a second site**: `waitFor()` settles that the canvas has attached, `boundingBox()`
        then reads a box that may be pre-layout, and `M227 A` failed in CI reading exactly that as
@@ -9331,137 +9297,9 @@ test('`M256` `A`: a picked row is its own editor — every statement drawn once,
   }
 });
 
-/**
- * **`M223` `E` — the playback height is the reader's, and the drag survives the frame** (`D1199`).
- *
- * The user pointed at a **gap**. With a trace up `.compose-pane` sits on its 320 px floor and the
- * viewer on its 620 px one — 994 px of want in a 900 px window — so the page queues them down a
- * scroll and the two can never be seen together at a size anybody chose. The 14 px between them is
- * `.stage`'s `margin-top`, and it reads as a seam because both columns' bottom borders run across
- * the full width right above it: a line that is not a control, which is `.split`'s own pre-`D1197`
- * misreading a second time.
- *
- * **It runs a real play, in a project of its own, and both halves of that are load-bearing.** A
- * real play because the frame only exists once there is a trace and there is no trace in the
- * fixture corpus — every `trace.path` in `reports/full` is `null`, so a seeded report cannot
- * produce this state. A project of its own because a play WRITES a report, and `D1099` has the
- * pane read *the last run that touched this file*: doing it in the shared fixture would hand every
- * later gate a report they did not write.
- *
- * The headline assertion is the drag distance, and it is the one that caught the defect. Measured
- * on the live page: a 300 px drag moved the frame **90 px** and stopped — exactly the distance
- * from the grip to the frame's top edge, because from there on `pointermove` belongs to the
- * iframe's document and the page never hears another one. Every grip in this app listens on the
- * window for the opposite reason (a pointer leaving a 6 px strip mid-drag is normal), and that
- * reasoning is simply void across a same-origin frame.
- */
-test('`M223` `E`: with a trace up, the playback height is the reader’s — and the drag survives the frame (`D1199`)', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'tflw-m223-'));
-  const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
-  const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
-  try {
-    // The fixture server is already up for this process — pointing at it is what makes the play a
-    // real one. `node_modules` is symlinked for the same reason the shared fixture does it: with
-    // no `playwright-core` resolvable from the project there is no viewer to serve and no trace to
-    // put in it, and `readProject().traceViewer` would be false.
-    await symlink(join(here, '..', '..', '..', 'node_modules'), join(dir, 'node_modules'), 'dir');
-    await writeFile(join(dir, 'tflw.config'), ['env local default', `  web "http://127.0.0.1:${fixturePort}"`, ''].join('\n'));
-    await writeFile(join(dir, 'b.tflw'), ['@ui', 'test "one"', '  open "/"', ''].join('\n'));
-    const port = await ui.listen(0);
-    const base = `http://127.0.0.1:${port}`;
-
-    const read = () =>
-      fresh.locator('body').evaluate((root) => {
-        /* **No `const box = (sel) => …` here, and the first draft had one** (`M222-01`): tsx's
-           keep-names transform wraps any function expression with an INFERRED name in a call to
-           `__name`, which exists in the test process and not in the browser — `ReferenceError:
-           __name is not defined`, 1.4 s in, before the play it is waiting for even starts. An
-           anonymous arrow passed straight to `.map` is fine, which is why the sibling gate's
-           handle loop survives; binding one to a `const` is not. */
-        const view = root.ownerDocument.defaultView!;
-        const main = root.querySelector('.main-fill');
-        const grip = root.querySelector('[data-grip="stage"]');
-        const pane = root.querySelector('.compose-pane');
-        const frame = root.querySelector('.stage-frame');
-        return {
-          fit: root.querySelector('.doorpane')?.getAttribute('data-stage-fit') ?? null,
-          /* `.main-fill` is the scroll container, not the document — `documentElement` reads 900
-             whatever the region below the fold is doing, which is how a page that scrolls can look
-             like one that does not. */
-          over: main === null ? null : main.scrollHeight - main.clientHeight,
-          pane: pane === null ? null : { h: Math.round(pane.getBoundingClientRect().height) },
-          frame: frame === null ? null : { h: Math.round(frame.getBoundingClientRect().height) },
-          grips: root.querySelectorAll('[data-grip="stage"]').length,
-          handle: grip === null ? null : view.getComputedStyle(grip, '::before').backgroundColor,
-          hovered: grip === null ? false : grip.matches(':hover'),
-          muted: view.getComputedStyle(root.ownerDocument.documentElement).getPropertyValue('--muted').trim(),
-          rows: root.querySelectorAll('[data-seq-row]').length,
-        };
-      });
-
-    await fresh.goto(`${base}/?token=${TOKEN}#/compose/b.tflw/L3`);
-    let m = await read();
-    for (let i = 0; i < 50 && m.rows === 0; i++) {
-      await fresh.waitForTimeout(100);
-      m = await read();
-    }
-    assert.ok(m.rows > 0, `the pane never settled — ${JSON.stringify(m)}`);
-    // `D1082` — with no trace the stage is a 17 px bar, and a control that resizes a bar is a
-    // control that does nothing.
-    assert.equal(m.grips, 0, 'the playback grip is drawn before there is anything to share');
-
-    await fresh.locator('[data-seq-play="test"]').first().click();
-    for (let i = 0; i < 240 && m.frame === null; i++) {
-      await fresh.waitForTimeout(500);
-      m = await read();
-    }
-    assert.ok(m.frame !== null, `no trace landed in two minutes, so this gate measured nothing — ${JSON.stringify(m)}`);
-    assert.equal(m.grips, 1, 'there is a trace and no grip on the boundary above it');
-    // The handle, at rest, with the pointer nowhere near it (`D1197` applied to the third grip).
-    const hex = m.muted.replace('#', '');
-    assert.equal(m.hovered, false, 'the grip is under the pointer, so its colour is the lit one');
-    assert.equal(m.handle, `rgb(${parseInt(hex.slice(0, 2), 16)}, ${parseInt(hex.slice(2, 4), 16)}, ${parseInt(hex.slice(4, 6), 16)})`);
-    // The denominator: at rest this really is the state the round is about — the two regions do
-    // not fit and the region scrolls. Without this the assertions below pass on a window that was
-    // never crowded.
-    assert.equal(m.fit, 'auto', 'something has already overridden the height, so `M221`’s own state is not what is being measured');
-    assert.ok((m.over ?? 0) > 100, `at rest the two regions already fit (${m.over}px over), so there is nothing for the reader to decide`);
-    const atRest = m;
-
-    const g = (await fresh.locator('[data-grip="stage"]').boundingBox())!;
-    await fresh.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
-    await fresh.mouse.down();
-    // **Deliberately far enough to cross the frame's own top edge**, which is ~100 px below the
-    // grip: a drag that stopped there is the defect, and a shorter drag cannot tell the two apart.
-    await fresh.mouse.move(g.x + g.width / 2, g.y + g.height / 2 + 400, { steps: 12 });
-    await fresh.mouse.up();
-    await fresh.waitForTimeout(300);
-    const dragged = await read();
-    assert.ok(
-      dragged.frame !== null && atRest.frame !== null && atRest.frame.h - dragged.frame.h >= 300,
-      `a 400px drag moved the playback ${Math.round((atRest.frame?.h ?? 0) - (dragged.frame?.h ?? 0))}px — it is dying at the frame’s top edge`,
-    );
-    // …and the thing the drag is FOR: both regions in one window, at the share the reader set.
-    assert.equal(dragged.over, 0, `the region still scrolls by ${dragged.over}px after the reader asked for both at once`);
-    assert.ok(
-      dragged.pane !== null && atRest.pane !== null && dragged.pane.h >= atRest.pane.h,
-      `the authoring pane did not take the room back — ${atRest.pane?.h} → ${dragged.pane?.h}`,
-    );
-
-    // `Home` gives `M221`'s viewer back exactly: 620 is `.stage-frame`'s own floor, which is why
-    // the grip sizes the FRAME rather than the section around it.
-    await fresh.locator('[data-grip="stage"]').focus();
-    await fresh.keyboard.press('Home');
-    await fresh.waitForTimeout(300);
-    const home = await read();
-    assert.equal(home.fit, String(STAGE_FALLBACK));
-    assert.ok(home.frame !== null && Math.abs(home.frame.h - atRest.frame.h) <= 2, `\`Home\` did not restore the viewer — ${atRest.frame.h} → ${home.frame?.h}`);
-  } finally {
-    await fresh.close();
-    await ui.close();
-    await rm(dir, RM_RETRY);
-  }
-});
+// `M223` `E` (`D1199`) — the playback height the reader could drag — retired with the stage at
+// `M257` `A` (`D1407`): there is no region under the columns to size. The trace opens in Run's
+// viewer, which has the pane to itself.
 
 /**
  * **Nothing on the sequence column is painted the disabled colour** — `M223` `G`.
@@ -12418,39 +12256,27 @@ test('`M227`: the plan gets the height it needs, draws from zero, and says it on
   }
 });
 
-// ── `M227` `D` (`D1235`) — the footer yields to a live playback region ───────────────────────
+// ── `M257` `A` (`D1407`) — a run draws itself in the rows ──────────────────────────────────────
 //
-// Found by the user on a populated BROWSER playback, and the picture was right while the ordering
-// was untouched. `D1181` has put the Stage below both columns on **every** door since `M220`, and
-// `M226` reordered nothing. What it did was make region 2 the same width as the Stage — measured
-// on this door, `.responsebox` **753 -> 1072** with `.stage` already at 1072 — so two identical
-// full-width bands stack and the upper one reads as the page's floor while the lower one is.
-//
-// The cost is measured, not aesthetic: a trace is **620 px** (`STAGE.fallback`), and on BROWSER
-// the plan took **371** rather than its 240 floor, because that door's editor wants only 237 and
-// `1fr` hands the slack downward. A third of the pane was a chart between the author and the
-// thing the door exists for.
-//
-// **Keyed on the state, never the door.** *This pane has playback up* is true on LOAD the moment
-// you press ▶ on a browser test and false on BROWSER until you do — so this gate PLAYS one, with
-// the same declaration selected before and after. A door-keyed rule would be green under every
-// mutation that made it state-keyed, and the other way round.
-test('`M227` `E`: the scratch notice closes the playback region rather than leading it (`D1236`) — `D`\'s footer is retired with it (`M256`)', async () => {
+// The stage retired with this slice: ▶ puts a status line under the bar, lands each step's mark on
+// the row it ran on, and the evidence column follows; the trace is the `screenshot` tab's link,
+// opened in Run's viewer. `M227` `E`'s claim about the play scratch's sentence survives the move
+// and is held here — *after* a press, never before, and once (`D1236`, `D1076`).
+test('`M257` `A`: ▶ draws the run in the rows — a status line, the mark on the row it ran, the trace in the screenshot tab, and the scratch sentence only once a press wrote it', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'tflw-m227d-'));
   const ui = new UiServer({ token: TOKEN, root: dir, cliEntry, execArgv: ['--import', tsxLoader], staticDir: join(scratch, 'ui') });
   const fresh = await newPage({ viewport: { width: 1440, height: 900 } });
   try {
-    /* The same arrangement `M223` `E` needs and for the same reason: with no `playwright-core`
-       resolvable from the project there is no viewer to serve and no trace to put in it, so
-       `readProject().traceViewer` is false and this gate would measure nothing. */
+    /* With no `playwright-core` resolvable from the project there is no viewer to serve, so
+       `readProject().traceViewer` is false and the trace link — half of what this gate reads —
+       is never offered. */
     await symlink(join(here, '..', '..', '..', 'node_modules'), join(dir, 'node_modules'), 'dir');
     await writeFile(
       join(dir, 'tflw.config'),
       ['env local default', `  web "http://127.0.0.1:${fixturePort}"`, `  api "http://127.0.0.1:${fixturePort}"`, ''].join('\n'),
     );
-    /* **One file, both declarations.** Two files would reset `played` — it is cleared on a change
-       of PATH and not of line — and the whole gate is that the same declaration reads differently
-       before and after a trace lands. */
+    /* One file, two declarations — the second is the control that a status line is about the run,
+       not about which test is open. */
     await writeFile(
       join(dir, 'd.tflw'),
       [
@@ -12469,75 +12295,43 @@ test('`M227` `E`: the scratch notice closes the playback region rather than lead
     const port = await ui.listen(0);
     const base = `http://127.0.0.1:${port}`;
 
-    /* `noticeTop` and `frameBottom` carry `E`. `dir` has no `.gitignore` at all, so `playIgnored`
-       is false and the sentence is live for the whole run — which is what makes its ABSENCE before
-       the play a reading rather than a vacancy, and its presence after is that control's proof. */
-    const read = async (): Promise<{
-      boxW: number; stageW: number; stage: string | null;
-      notices: number; noticeTop: number | null; frameBottom: number | null; barBottom: number | null;
-    }> =>
-      fresh.locator('.doorpane').evaluate((pane) => {
-        const box = pane.querySelector('.responsebox');
-        const st = pane.querySelector('[data-stage]');
-        const note = pane.querySelector('[data-stage-unignored]');
-        const frame = pane.querySelector('[data-stage-frame]');
-        const bar = pane.querySelector('.stage-bar');
-        return {
-          boxW: box === null ? 0 : Math.round(box.getBoundingClientRect().width),
-          stageW: st === null ? 0 : Math.round(st.getBoundingClientRect().width),
-          stage: st === null ? null : st.getAttribute('data-stage'),
-          notices: pane.querySelectorAll('[data-stage-unignored]').length,
-          noticeTop: note === null ? null : Math.round(note.getBoundingClientRect().top),
-          frameBottom: frame === null ? null : Math.round(frame.getBoundingClientRect().bottom),
-          barBottom: bar === null ? null : Math.round(bar.getBoundingClientRect().bottom),
-        };
-      });
-
-    // ── BEFORE — nothing has been played, and the workload declaration takes the page's width ──
-    await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L5`);
-    await fresh.locator('.compose-pane-grid').waitFor();
-    await fresh.waitForTimeout(400);
-    const before = await read();
-    assert.equal(before.stage, 'empty', 'nothing has been played yet, which is what makes this the control');
-    /* `E`, first half — the OCCASION. Nothing has been played, so nothing has written the scratch,
-       and the sentence about it is not drawn. It led the region in all four stage states before
-       this slice, including this one, where the hint directly above it reads *press ▶ on a test to
-       run it and watch it here*. */
-    assert.equal(before.notices, 0, `an empty stage has written no scratch and says nothing about one — found ${before.notices}`);
-
-    // ── Play the browser test, in the same file, so `played` survives the trip back ────────────
+    // ── BEFORE — nothing has run: no status line, and no sentence about a scratch nothing wrote ──
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L2`);
-    await fresh.locator('[data-seq-play="test"]').first().waitFor();
-    await fresh.locator('[data-seq-play="test"]').first().click();
-    let m = await read();
-    for (let i = 0; i < 240 && m.stage !== 'trace'; i++) {
-      await fresh.waitForTimeout(500);
-      m = await read();
-    }
-    assert.equal(m.stage, 'trace', `no trace landed in two minutes, so this gate measured nothing — ${JSON.stringify(m)}`);
+    const play = fresh.locator('[data-seq-play="test"]').first();
+    await play.waitFor();
+    assert.equal(await countSettling(fresh, '[data-play-status]', 0), 0, 'a status line with no run behind it');
+    assert.equal(await countSettling(fresh, '[data-play-unignored]', 0), 0, 'the sentence about a scratch nothing has written yet');
+    assert.equal(await fresh.locator('[data-seq-line="3"] [data-verdict]').count(), 0, 'the row has a mark before anything ran'); // one-shot: the settle above has drawn the pane
 
-    // ── AFTER — the same declaration, and the page has one full-width band again ───────────────
+    // ── PRESS — the line appears, then says how the run ended ─────────────────────────────────
+    await play.click();
+    await fresh.locator('[data-play-status]').waitFor({ timeout: 60_000 });
+    assert.equal(await fresh.locator('[data-play-status]').getAttribute('data-play-test'), 'plays');
+    await fresh.locator('[data-play-status]:not([data-play-status="running"])').waitFor({ timeout: 120_000 });
+    const ended = (await fresh.locator('[data-play-status]').getAttribute('data-play-status'))!;
+    assert.ok(ended === 'passed' || ended === 'failed', `the run ended ${ended}, which is neither verdict`);
+    // The step's mark is on the row it ran on — the same join the finished report uses (`D1108`).
+    await fresh.locator('[data-seq-line="3"] [data-verdict]').waitFor({ timeout: 60_000 });
+    assert.equal(await fresh.locator('[data-seq-line="3"] [data-verdict]').getAttribute('data-verdict'), ended === 'passed' ? 'pass' : 'fail');
+    // `M227` `E` carried: the press wrote the scratch, so the sentence is drawn — once, in the line.
+    assert.equal(await countSettling(fresh, '[data-play-unignored]', 1), 1);
+    assert.equal(await fresh.locator('.play-line [data-play-unignored]').getAttribute('data-play-unignored'), '.play.tflw');
+    // NEGATIVE CONTROL: the other test in the file is not "running" or "passed" — the line names the
+    // test it is about, and opening another test does not relabel it.
     await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L5`);
-    await fresh.locator('.compose-pane-grid').waitFor();
-    await fresh.waitForTimeout(400);
-    const after = await read();
-    assert.equal(after.stage, 'trace', 'the trace survived the trip back, so the two readings differ in one fact');
-    // `D1235`'s band is the evidence column now, never the page's width — so the stage under the
-    // columns is the page's one full-width band whether or not a trace is up.
-    assert.ok(after.boxW < after.stageW - 200, `the evidence is a column, not a band — ${after.boxW} against the stage's ${after.stageW}`);
+    await fresh.locator('[data-play-status]').waitFor();
+    assert.equal(await fresh.locator('[data-play-status]').getAttribute('data-play-test'), 'plays');
 
-    /* `E`, second half — the POSITION, and it is taken on the FAR edge for `M227` `A`'s reason: a
-       rule reading `noticeTop > barBottom` is true of the shipped defect too, since the notice led
-       the region from directly under the bar. The frame's BOTTOM is the only edge the two
-       arrangements disagree about. `notices === 1` is the pair's own control: the project does not
-       ignore `.play.tflw`, so a sentence that never appears at all would pass a position rule
-       vacuously. */
-    assert.equal(after.notices, 1, 'the play wrote the scratch, so the sentence is drawn once (`D1076`)');
-    assert.ok(after.frameBottom !== null, 'a trace is up, so there is a frame to be below');
-    assert.ok(
-      after.noticeTop !== null && after.frameBottom !== null && after.noticeTop >= after.frameBottom - 1,
-      `the notice closes the region instead of leading it — top ${after.noticeTop} against the frame's bottom ${after.frameBottom} and the bar's ${after.barBottom} (\`D1236\`)`,
-    );
+    // ── The trace is the screenshot tab's, and it opens in Run's viewer ────────────────────────
+    await fresh.goto(`${base}/?token=${TOKEN}#/compose/d.tflw/L3`);
+    const link = fresh.locator('[data-evidence-trace]');
+    await link.waitFor({ timeout: 60_000 });
+    const traced = (await link.getAttribute('data-evidence-trace'))!;
+    assert.match(traced, /^assets\/traces\/[0-9a-f]{16}\.zip$/);
+    await fresh.locator('[data-evidence-open-trace]').click();
+    await fresh.locator('[data-tabstrip="run"]').waitFor();
+    await fresh.locator('[data-trace-frame]').waitFor();
+    assert.equal(await fresh.locator('[data-trace-pane]').getAttribute('data-trace-pane'), traced, 'the viewer opened on another trace than the one the tab offered');
   } finally {
     await fresh.close();
     await ui.close();
@@ -12932,7 +12726,7 @@ test('`M241` `E` (`D1325`): the explorer scales — virtualised past its thresho
   });
 });
 
-test('`M241` `E` (`D1325`): a report is narrowed by failed, by file and by name, and says it is showing a part', async () => {
+test('`M241` `E` (`D1325`) + `M257` `B`: a report is narrowed by file and by name and says it is showing a part — and *failed* is the tree\'s own group, not a filter', async () => {
   // Two tests that pass by construction and one that fails by construction — its `api` points at a
   // port nothing listens on — so the report holds both verdicts without a fixture server.
   const files = {
@@ -12945,17 +12739,27 @@ test('`M241` `E` (`D1325`): a report is narrowed by failed, by file and by name,
     const filter = p.locator('[data-report-filter]');
     await filter.waitFor({ timeout: 60_000 });
     await settle(async () => (await filter.getAttribute('data-report-total')) ?? '', untilEqual('3'), { attempts: 40, delayMs: 100, page: p });
-    await p.locator('[data-filter-failed]').check();
-    await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('1'), { attempts: 40, delayMs: 50, page: p });
-    await settle(async () => p.locator('[data-test]').evaluateAll((els) => els.map((e) => e.getAttribute('data-name'))), untilEqual(['a fails']), { attempts: 40, delayMs: 50, page: p });
-    await p.locator('[data-report-narrowed]').waitFor();
-    await p.locator('[data-filter-failed]').uncheck();
+    // `M257` `B` (`D1409`): what failed is the tree's first group, open — the checkbox that used to
+    // narrow to it is gone, because the tree already draws exactly that.
+    await settle(async () => p.locator('[data-tree-test="failed"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-name'))), untilEqual(['a fails']), { attempts: 40, delayMs: 50, page: p });
+    assert.equal(await p.locator('[data-filter-failed], [data-filter-skipped]').count(), 0, 'a verdict filter beside a tree grouped by verdict'); // one-shot: the settle above has drawn the tree
+    assert.equal(await countSettling(p, '[data-report-narrowed]', 0), 0, 'nothing is narrowed yet');
+    // NEGATIVE CONTROL for the rule below: at rest, the passes are one folded row.
+    assert.equal(await p.locator('[data-tree-group="passed"]').evaluate((el) => (el as unknown as { open: boolean }).open), false); // one-shot: the settle above has drawn the tree
     await p.locator('[data-filter-file]').selectOption('b.tflw');
     await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('1'), { attempts: 40, delayMs: 50, page: p });
+    await p.locator('[data-report-narrowed]').waitFor();
+    await settle(async () => p.locator('[data-tree-test]').evaluateAll((els) => els.map((e) => e.getAttribute('data-name'))), untilEqual(['b also passes']), { attempts: 40, delayMs: 50, page: p });
+    // A narrowing filter opens the group it matched: the match is the row just asked for, not a
+    // folded `passed 1` to press again.
+    await p.locator('[data-tree-test][data-name="b also passes"]').waitFor();
     await p.locator('[data-filter-file]').selectOption('');
     await p.locator('[data-filter-text]').fill('passes');
     await settle(async () => (await filter.getAttribute('data-report-shown')) ?? '', untilEqual('2'), { attempts: 40, delayMs: 50, page: p });
-    await settle(async () => p.locator('[data-filter-skipped]').count(), untilEqual(0), { attempts: 10, delayMs: 50, page: p }); // no test was skipped, so there is no `skipped` to narrow by
+    // The failing test is narrowed away, so its group is not drawn with a zero — and the picked
+    // test it was is not drawn on the right either: the pane never shows what the filter hides.
+    assert.equal(await countSettling(p, '[data-tree-group="failed"]', 0), 0);
+    assert.equal(await countSettling(p, '.run-detail [data-test]', 0), 0);
   });
 });
 
@@ -12986,8 +12790,9 @@ test('`M249` `B` (`D1362`): a test\'s past is drawn beside it — dots oldest fi
     await fails.locator('[data-history-flaky]').waitFor();
     const tip = await settle(async () => (await fails.locator('[data-history]').getAttribute('data-tip').catch(() => null)) ?? '', untilMeasurable('a tip on the dots', (t) => t.length > 0), { attempts: 60, delayMs: 100, page: p });
     assert.match(tip.value, /1 of the last 2 kept runs failed — the verdict changed with no change to the file/);
-    // The control: the test that did not flip has dots and no pill.
-    const passes = p.locator('[data-test][data-name="a passes"]');
+    // The control: the test that did not flip has dots and no pill. (`M257` `B`: `a fails` is what the
+    // run opened on; `a passes` is a row of the folded `passed` group, opened by the reader.)
+    const passes = await openRunTest('a passes', p);
     await settle(async () => (await passes.locator('[data-history]').getAttribute('data-history').catch(() => null)) ?? '', untilEqual('pass,pass'), { attempts: 60, delayMs: 100, page: p });
     // one-shot: the pill and the dots are one render of one row, and the dots settled on the line above.
     assert.equal(await passes.locator('[data-history-flaky]').count(), 0);
@@ -13581,7 +13386,7 @@ test('the run list marks the open report, counts `current` as a property, and ke
 
     await p.goto(`${base}/?token=${TOKEN}#/run/one.tflw`);
     await p.reload();
-    await p.locator('[data-runs]').waitFor();
+    await p.locator('[data-runs]').waitFor({ state: 'attached' }); // behind the picker (`M257` `B`)
 
     const rows = p.locator('[data-report-row]');
     // **`D1254` — two directories, one run each, and `current` is not a third.** Before this the
@@ -13609,14 +13414,17 @@ test('the run list marks the open report, counts `current` as a property, and ke
     // draft of this line asserted nothing was open and read `['true', 'false']`, which is the page
     // being helpful and the gate being wrong about it.
     assert.deepEqual(await pressed(), ['true', 'false'], 'exactly one row is marked on arrival, and it is the newest');
-    await p.locator(`[data-report-row="${older}"]`).click();
-    await p.locator(`[data-report-row="${older}"][aria-pressed="true"]`).waitFor();
+    // `M257` `B` — and the picker says which, in its own words.
+    assert.match((await p.locator('[data-run-picked]').textContent()) ?? '', /^run \d+[smhd] ago ▾$/);
+    assert.equal(await p.locator('[data-run-picked]').getAttribute('data-run-picked'), newer);
+    await pickRun(`[data-report-row="${older}"]`, p);
+    await p.locator(`[data-report-row="${older}"][aria-pressed="true"]`).waitFor({ state: 'attached' });
     assert.deepEqual(await pressed(), ['false', 'true'], 'exactly one row is marked, and it is the one that was opened');
     // …and it is the row whose evidence the pane is actually showing — a marker on the wrong row
     // is worse than none, and nothing above this line would have caught it.
-    assert.match((await p.locator('[data-report-summary], .report, main').first().textContent()) ?? '', /1\s*\/\s*2|1 of 2|passed/i);
-    await p.locator(`[data-report-row="${newer}"]`).click();
-    await p.locator(`[data-report-row="${newer}"][aria-pressed="true"]`).waitFor();
+    await p.locator(`[data-report="${older}"]`).waitFor();
+    await pickRun(`[data-report-row="${newer}"]`, p);
+    await p.locator(`[data-report-row="${newer}"][aria-pressed="true"]`).waitFor({ state: 'attached' });
     assert.deepEqual(await pressed(), ['true', 'false'], 'opening another run left two rows marked');
   });
 });
@@ -13893,3 +13701,189 @@ test('`M255` `B`: `+ new file` stays in the window at 900 px on a 100-file proje
   });
 });
 
+
+// ── `M257` — Run and playback (`D1407`, `D1409`) ────────────────────────────────────────────────
+
+test('`M257` `B` (`D1409`): Run is a tree by verdict — its counts are results.json\'s, it opens on the first failure with that step open, and the headline carries one verdict', async () => {
+  const report = oracle.full!;
+  await openReport('full');
+  // ── The counts, against `results.json` (the `M192` U2 oracle).
+  assert.equal(await countSettling(page, '[data-tree-test]', report.total), report.total);
+  assert.equal(await countSettling(page, '[data-tree-test="failed"]', report.failed), report.failed);
+  assert.equal(await countSettling(page, '[data-tree-test="passed"]', report.passed), report.passed);
+  assert.equal(await countSettling(page, '[data-tree-test="skipped"]', report.skipped ?? 0), report.skipped ?? 0);
+  assert.equal(await page.locator('[data-tree-group="failed"]').getAttribute('data-tree-count'), String(report.failed));
+  assert.equal(await page.locator('[data-tree-group="passed"]').getAttribute('data-tree-count'), String(report.passed));
+  // ── The groups: failed first and open, the passes one folded row with a count.
+  await settle(
+    async () => page.locator('[data-tree-group]').evaluateAll((els) => els.map((e) => `${e.getAttribute('data-tree-group')}:${(e as unknown as { open: boolean }).open ? 'open' : 'folded'}`)),
+    untilEqual(['failed:open', 'passed:folded']),
+    { attempts: 40, delayMs: 50, page },
+  );
+  // ── It opens on the first failure, and that test's failing step is open while its passes fold.
+  const first = functional(report).find((t) => !t.ok)!;
+  assert.equal(await page.locator('[data-tree-test]').first().getAttribute('data-name'), first.name, 'the first row is not the first failure');
+  const detail = page.locator('.run-detail [data-test]');
+  await detail.waitFor();
+  assert.equal(await detail.getAttribute('data-name'), first.name, 'the pane opened on something other than the first failure');
+  // What is open is the failure and the step its group opens on — an `expect` has no evidence of
+  // its own, so the response it judged is its request's. Every other fold is shut.
+  const OPENERS = new Set(['api', 'open', 'click', 'fill', 'select', 'checkbox', 'uncheckbox', 'press', 'hover', 'scroll', 'drag', 'dropFile', 'dialog', 'switchTab', 'closeTab']);
+  const failing = new Set<number>();
+  let opener: number | null = null;
+  first.steps.forEach((st, i) => {
+    if (OPENERS.has(st.kind)) opener = i;
+    if (!st.ok) for (const j of opener === null ? [i] : [i, opener]) failing.add(j);
+  });
+  let opened = 0;
+  for (const [i, st] of first.steps.entries()) {
+    const fold = detail.locator(`:scope > .steps > [data-step]`).nth(i).locator('details.evidence');
+    // one-shot: the detail's wait above is the render that drew every step of this test at once.
+    if ((await fold.count()) === 0) continue;
+    assert.equal(await fold.evaluate((el) => (el as unknown as { open: boolean }).open), failing.has(i), `line ${st.line}: ${failing.has(i) ? 'the failure’s evidence is folded' : 'a passing group is open'}`);
+    if (failing.has(i)) opened += 1;
+  }
+  assert.ok(opened >= 1, 'the failing step carries evidence to open, or this reading proves nothing');
+  // ── One verdict. The verdict element holds the word; every other part is a tally of ONE OR MORE
+  //    — the §0 line failed exactly here, with `0 failed` beside `FAIL` and a bare `inconclusive`.
+  //    `runTree.test.ts` holds the same rule over the text, with that line as its negative control.
+  const verdict = page.locator('[data-headline] [data-verdict]');
+  assert.equal(await verdict.getAttribute('data-verdict'), 'FAILED');
+  assert.equal((await verdict.textContent())?.trim(), `${report.failed} FAILED`);
+  assert.match((await page.locator('[data-headline] [data-counts]').textContent()) ?? '', /^( · [1-9]\d* (passed|inconclusive|skipped|running))+$/);
+  assert.doesNotMatch((await page.locator('[data-headline]').textContent()) ?? '', /\b(PASS|FAIL|failed)\b/, 'a second verdict word in the headline');
+  // ── The detail's two ways out: to the test's own line in Compose, and a rerun of just it.
+  const line = await page.locator('.run-detail [data-open-compose]').getAttribute('data-open-compose');
+  // A declaration starts at its tags, as the explorer's own row for it does.
+  const source = (await readFile(join(root, first.file!), 'utf8')).split('\n');
+  let declared = source.findIndex((l) => l.trim() === `test "${first.name}"`) + 1;
+  while (declared > 1 && source[declared - 2]!.trim().startsWith('@')) declared -= 1;
+  assert.equal(Number(line), declared, 'open in Compose names another line than the test\'s own');
+  const asked: string[] = [];
+  await page.route('**/api/run', async (route) => {
+    if (route.request().method() === 'POST') asked.push(route.request().postData() ?? '');
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'caught by the test' }) });
+  });
+  try {
+    await page.locator('.run-detail [data-rerun]').click();
+    await settle(async () => asked.length, untilEqual(1), { attempts: 40, delayMs: 50, page });
+    const body = JSON.parse(asked[0]!) as { files?: string[]; only?: string };
+    assert.deepEqual([body.files, body.only], [[first.file], first.name]);
+  } finally {
+    await page.unroute('**/api/run');
+  }
+  await page.locator('.run-detail [data-open-compose]').click();
+  await page.locator('[data-compose-summary]').waitFor();
+  assert.equal(await page.locator('[data-compose-summary]').getAttribute('data-compose-decl-line'), String(declared));
+});
+
+/**
+ * **`M257` `A` (`D1407`) — the rows light as the stream judges them, against the fixture's own
+ * `events.ndjson`.**
+ *
+ * A fulfilled route delivers its body at once, which would light every row in one render and prove
+ * nothing about order. So the fixture's events are served from a stream of this test's own, one
+ * every 150 ms, and the page's `/events` request is sent there; an observer in the page writes down
+ * which row is lit, in the order it happened. Three runs: one that passes (the order), one that
+ * fails (the column rests on the failure), and one cancelled after three steps (the rows it never
+ * reached are *not run*, while the last report had marked them — `M192`'s
+ * `cancel-forgets-to-mark-the-run`, one surface over).
+ */
+test('`M257` `A`: the rows light in the stream\'s order, the column rests on the failure, and a cancelled run leaves the rows it never reached not run', async () => {
+  const events = (await readFile(join(fixtures, 'reports', 'full', 'events.ndjson'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((l) => JSON.parse(l) as { type: string; file?: string; name?: string; test?: string; result?: { name: string } })
+    .filter((e) => e.file === 'tests/catalog.tflw');
+  const of = (name: string): unknown[] => events.filter((e) => e.type === 'run:start' || e.name === name || e.test === name || e.result?.name === name);
+  let plan: { events: readonly unknown[]; end: unknown } = { events: [], end: {} };
+  const stream = createHttpServer((_req, res) => {
+    res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'access-control-allow-origin': '*' });
+    const queue = [...plan.events];
+    const end = plan.end;
+    const next = (): void => {
+      const e = queue.shift();
+      if (e === undefined) {
+        res.end(`event: end\ndata: ${JSON.stringify(end)}\n\n`);
+        return;
+      }
+      res.write(`data: ${JSON.stringify(e)}\n\n`);
+      setTimeout(next, 150);
+    };
+    next();
+  });
+  await new Promise<void>((r) => stream.listen(0, '127.0.0.1', () => r()));
+  const streamPort = (stream.address() as { port: number }).port;
+  let n = 0;
+  await page.route('**/api/run', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    n += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: `m257-${n}`, startedAt: new Date().toISOString(), request: {}, argv: [], status: 'running', exitCode: null, signal: null, endedAt: null, kept: null }) });
+  });
+  await page.route('**/api/runs/m257-*/events*', (route) => route.continue({ url: `http://127.0.0.1:${streamPort}/events` }));
+  await page.route('**/api/runs/m257-*/stderr*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '{"stderr":""}' }));
+  const watchLit = (): Promise<void> =>
+    page.locator('[data-seq-col]').evaluate((col) => {
+      const w = col.ownerDocument.defaultView as unknown as { __lit: number[]; MutationObserver: new (cb: () => void) => { observe(node: unknown, options: unknown): void } };
+      w.__lit = [];
+      new w.MutationObserver(() => {
+        const at = col.querySelector('[data-live-at="yes"]');
+        const line = at === null ? null : Number(at.getAttribute('data-seq-line'));
+        if (line !== null && w.__lit[w.__lit.length - 1] !== line) w.__lit.push(line);
+      }).observe(col, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-live-at'] });
+    });
+  const lit = (): Promise<number[]> => page.locator('[data-seq-col]').evaluate((col) => (col.ownerDocument.defaultView as unknown as { __lit: number[] }).__lit); // one-shot: read after the status line's wait, which is the stream's end
+  const run = async (at: number, events: readonly unknown[], end: unknown): Promise<void> => {
+    plan = { events, end };
+    await page.goto(`${pageUrl}#/compose/tests/catalog.tflw/L${at}`);
+    await page.reload();
+    await page.locator('[data-seq-row]').first().waitFor();
+    await watchLit();
+    await page.locator('[data-run]').click();
+    await page.locator('[data-play-status]').waitFor();
+    await page.locator('[data-play-status]:not([data-play-status="running"])').waitFor({ timeout: 30_000 });
+  };
+  try {
+    // ── 1. A run that passes: every row lit in the order its step ended, and every mark landed.
+    const passing = 'lists the catalog and follows the first item';
+    await run(2, of(passing), { status: 'done', exitCode: 0, kept: null });
+    assert.equal(await page.locator('[data-play-status]').getAttribute('data-play-status'), 'passed');
+    assert.deepEqual(await lit(), [3, 4, 5, 6, 7, 8, 9, 10], 'the rows did not light in the order the stream judged them');
+    assert.equal(await page.locator('[data-play-status]').getAttribute('data-play-judged'), '8');
+    for (const line of [3, 4, 5, 6, 7, 8, 9, 10]) {
+      if (line === 3 || line === 8) continue; // a request row's own mark is its response, not a verdict
+      assert.equal(await countSettling(page, `[data-seq-line="${line}"] [data-verdict]`, 1), 1, `line ${line} has no mark`);
+    }
+
+    // ── 2. A run that fails: the column follows it and RESTS on the failing step's group.
+    const failing = 'the price of a widget is what the shelf says';
+    await run(19, of(failing), { status: 'done', exitCode: 1, kept: null });
+    assert.equal(await page.locator('[data-play-status]').getAttribute('data-play-status'), 'failed');
+    assert.equal((await page.locator('[data-play-lead]').textContent())?.trim(), 'failed at line 22');
+    assert.equal(await page.locator('[data-seq-line="22"] [data-verdict]').getAttribute('data-verdict'), 'fail');
+    assert.equal(await page.locator('[data-seq-line="22"]').getAttribute('data-live-at'), 'yes', 'the failing row is not the lit one');
+    assert.equal(await page.locator('[data-evidence-follow="run"]').getAttribute('data-evidence-follow-line'), '20', 'the column is not resting on the failing step\'s request');
+    // Picking a row is the reader taking the column back.
+    await page.locator('[data-seq-line="21"] > [data-seq-pick]').click();
+    await page.locator('[data-evidence-follow]').waitFor({ state: 'detached' });
+
+    // ── 3. Cancelled after three steps: the rows it never reached are not run.
+    await page.goto(`${pageUrl}#/compose/tests/catalog.tflw/L2`);
+    await page.reload();
+    await page.locator('[data-seq-line="9"] [data-verdict]').waitFor();
+    // CONTROL: the last report marked line 9, so its absence below is the stream's doing.
+    assert.equal(await page.locator('[data-seq-line="9"] [data-verdict]').count(), 1);
+    const three = of(passing).filter((e) => (e as { type: string }).type !== 'step:end').slice(0, 2).concat(of(passing).filter((e) => (e as { type: string }).type === 'step:end').slice(0, 3));
+    await run(2, three, { status: 'cancelled', exitCode: 130, kept: null });
+    assert.equal(await page.locator('[data-play-status]').getAttribute('data-play-status'), 'cancelled');
+    for (const line of [4, 5]) assert.equal(await countSettling(page, `[data-seq-line="${line}"] [data-verdict]`, 1), 1, `line ${line} ran and has no mark`);
+    for (const line of [6, 7, 9, 10]) assert.equal(await countSettling(page, `[data-seq-line="${line}"] [data-verdict]`, 0), 0, `line ${line} never ran and still shows the last report's mark`);
+  } finally {
+    await page.unroute('**/api/run');
+    await page.unroute('**/api/runs/m257-*/events*');
+    await page.unroute('**/api/runs/m257-*/stderr*');
+    await new Promise<void>((r) => stream.close(() => r()));
+    // The shell keeps the last run it followed; a reload leaves nothing of these three behind.
+    await page.reload();
+  }
+});

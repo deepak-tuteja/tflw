@@ -28,11 +28,15 @@ from disk** beside the refusal shows the file as it is now, and drops the draft.
 
 ## Running
 
-**▶** beside a test runs that test; the Run tab runs the selection with the env, workers and
-`--headed` shown on it. A run started here is an ordinary `tflw run`: it writes `report/` and keeps
-itself under `report/runs/<id>/`, and the dots beside each test are its last kept runs. A `tflw run`
-started from a terminal in the same project shows on the Run tab while it runs, too — it says so in
-`report/.running.json` until it has kept itself; the page cannot cancel a run it did not start.
+**▶** beside a test runs that test; **▶** in the header runs the selection with the env, workers and
+`--headed` shown beside it. A run started here is an ordinary `tflw run`: it writes `report/` and
+keeps itself under `report/runs/<id>/`, and the dots beside each test are its last kept runs. While it
+runs, the file you are on shows it — each step's mark lands on its row, a line under the file's name
+says how far it has got and offers **cancel**, and the right-hand column follows the step it has
+reached. The **Run** tab reads a run as a tree by verdict, failures first; see [Reading a
+run](/ui/a-run). A `tflw run` started from a terminal in the same project shows on the Run tab while
+it runs, too — it says so in `report/.running.json` until it has kept itself; the page cannot cancel
+a run it did not start.
 
 ## Accessibility
 

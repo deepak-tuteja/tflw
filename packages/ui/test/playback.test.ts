@@ -1,7 +1,8 @@
-// `M221` — ▶ runs the buffer, and the stage shows what it did (`D1181`–`D1186`).
+// `M221` — ▶ runs the buffer, and the page shows what it did (`D1181`–`D1186`); since `M257` `A`
+// (`D1407`) the trace is the `screenshot` tab's, and the stage that held it has retired.
 //
 // These are the claims that are cheap here and expensive in a browser: where the scratch lands,
-// which report entries count as "this file" once a play has written one, and which trace the stage
+// which report entries count as "this file" once a play has written one, and which trace the tab
 // picks out of a report holding several. The page gate can show that a frame appeared; it cannot
 // cheaply show that a test in `tests/ui/storefront/` played from a scratch at the project **root**
 // would resolve its imports four directories away, which is the defect `D1184` exists to refuse
@@ -12,8 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { belongsTo, playScratchOf, sameFile } from '../src/ran.ts';
-import { traceOf } from '../src/Stage.tsx';
+import { belongsTo, playScratchOf, sameFile, traceOf } from '../src/ran.ts';
 import type { RunReport, TraceAsset } from '../src/contract.ts';
 
 const PLAY = '.play.tflw';
@@ -64,33 +64,38 @@ const reportWith = (tests: readonly { name: string; trace?: TraceAsset }[]): Run
     tests: tests.map((t) => ({ kind: 'functional', name: t.name, ok: true, durationMs: 10, file: 'tests/a.tflw', steps: [], ...(t.trace ? { trace: t.trace } : {}) })),
   }) as RunReport;
 
-test('the stage shows the trace of the declaration ▶ was pressed on, and of no other', () => {
+test('the screenshot tab offers the trace of the test it is showing, and of no other', () => {
   // `D1182`. A whole-suite run writes a trace for every browser test it touched; drawing one of
-  // them under an editor nobody played would be the stage answering a question nobody asked.
+  // them beside a test that did not produce it would answer a question nobody asked.
   const report = reportWith([
     { name: 'first', trace: { path: 'assets/traces/aaaa000000000001.zip' } },
     { name: 'second', trace: { path: 'assets/traces/bbbb000000000002.zip' } },
   ]);
-  assert.deepEqual(traceOf(report, 'second', 'r1'), { reportId: 'r1', path: 'assets/traces/bbbb000000000002.zip' });
+  assert.deepEqual(traceOf(report, 'second', 'r1', 'tests/a.tflw'), { reportId: 'r1', path: 'assets/traces/bbbb000000000002.zip' });
   // NEGATIVE CONTROL: a name the report does not hold draws nothing, rather than falling back to
   // the first trace in the file — which is what "show the newest trace" would have done.
-  assert.equal(traceOf(report, 'third', 'r1'), null);
+  assert.equal(traceOf(report, 'third', 'r1', 'tests/a.tflw'), null);
+  // `M257` `A`: and a test of the same name in ANOTHER file is not this one — the tab is about the
+  // open file's test, and a whole-suite report holds every file's.
+  assert.equal(traceOf(report, 'second', 'r1', 'tests/b.tflw'), null);
+  // NEGATIVE CONTROL for that: the play scratch of `tests/a.tflw` IS the same subject (`D1184`).
+  const played = { ...report, tests: report.tests.map((t) => ({ ...t, file: playScratchOf('tests/a.tflw', PLAY) })) } as RunReport;
+  assert.deepEqual(traceOf(played, 'second', 'r1', 'tests/a.tflw', PLAY), { reportId: 'r1', path: 'assets/traces/bbbb000000000002.zip' });
 });
 
-test('the stage reads `trace.path` and never hashes `trace.base64`', () => {
+test('the trace link reads `trace.path` and never hashes `trace.base64`', () => {
   // `D1171`'s own defect, deliberately not reintroduced. `TraceLink` accepts both shapes because
-  // it renders reports of any age; the stage's subject is a play THIS pane just pressed, and every
+  // it renders reports of any age; this link's subject is a run of THIS file, and every
   // such run writes a path. Hashing 800 KB in the browser to recover a filename that is already in
   // the report is the work `D1171` removed.
   const legacy = reportWith([{ name: 'first', trace: { base64: 'AAAA' } }]);
-  assert.equal(traceOf(legacy, 'first', 'r1'), null, 'the stage tried to read a pre-M220 report');
+  assert.equal(traceOf(legacy, 'first', 'r1', 'tests/a.tflw'), null, 'the tab tried to read a pre-M220 report');
   // NEGATIVE CONTROL: the same test WITH a path is found, so the null above is about the shape
   // and not about the lookup failing for some other reason.
-  assert.deepEqual(traceOf(reportWith([{ name: 'first', trace: { path: 'p.zip' } }]), 'first', 'r1'), { reportId: 'r1', path: 'p.zip' });
+  assert.deepEqual(traceOf(reportWith([{ name: 'first', trace: { path: 'p.zip' } }]), 'first', 'r1', 'tests/a.tflw'), { reportId: 'r1', path: 'p.zip' });
 });
 
-test('a run that kept no trace is a stage with nothing in it, not a stage with a broken frame', () => {
-  // `D1187` — the region says which of its states it is in. `null` here is what makes the hint
-  // render instead of an `<iframe src="undefined">`.
-  assert.equal(traceOf(reportWith([{ name: 'first' }]), 'first', 'r1'), null);
+test('a run that kept no trace offers no trace link, rather than a broken one', () => {
+  // `null` here is what keeps the tab from drawing a link to a file that does not exist.
+  assert.equal(traceOf(reportWith([{ name: 'first' }]), 'first', 'r1', 'tests/a.tflw'), null);
 });

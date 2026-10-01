@@ -83,6 +83,21 @@ export function groupIdentical(list: readonly ScanFinding[]): readonly { readonl
  * `null` means this page cannot accept anything — no run env, or no `baseline` in force for it —
  * and the list says which rather than offering a button that fails.
  */
+/**
+ * **The `security` row's words** — `M257` `C` (`D1409`): the tree's folded row over this block.
+ * `null` exactly when `Findings` draws nothing, so the row and the block cannot disagree about
+ * whether there is anything to open. Worst severity first, because that is what the row is for.
+ */
+export function securitySummary(report: RunReport, compare?: { readonly data: RunReport } | null): string | null {
+  const findings = report.findings ?? [];
+  const mine = new Set(findings.map(keyOf));
+  const gone = compare ? (compare.data.findings ?? []).filter((f) => !mine.has(keyOf(f))).length : 0;
+  if (findings.length === 0 && (report.scanCoverage ?? []).length === 0 && (report.authorizedTargets ?? []).length === 0 && gone === 0) return null;
+  if (findings.length === 0) return gone > 0 ? `no findings · ${gone} gone since the compared run` : 'no findings';
+  const worst = sortFindings(findings)[0]!;
+  return `${findings.length} finding${findings.length === 1 ? '' : 's'} · worst ${worst.severity}`;
+}
+
 export type AcceptFinding = (finding: ScanFinding) => void;
 
 export function Findings({

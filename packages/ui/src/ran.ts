@@ -184,10 +184,34 @@ export function groupFor(index: RanIndex, declLine: number, statementLine: numbe
 }
 
 export function indexFromReport(report: RunReport, path: string, bufferText: string, playScratch?: string): RanIndex {
+  const units = report.tests.filter((e) => e.kind === 'functional' || e.kind === 'crawl') as readonly { readonly file?: string; readonly steps: readonly StepResult[] }[];
+  return indexFromSteps(units, { at: report.startedAt, evidence: report.evidenceLevel ?? null }, path, bufferText, playScratch);
+}
+
+/** When the steps ran and at what evidence level — all a `Ran` needs of the run it came from. */
+export interface RunStamp {
+  readonly at: string;
+  readonly evidence: RunReport['evidenceLevel'] | null;
+}
+
+/**
+ * **The join over any list of steps** — `M257` `A` (`D1407`).
+ *
+ * `indexFromReport` is this over a finished report's tests. A run in flight has the same steps
+ * arriving one `step:end` at a time (`live.ts`), so the rows can light as the run goes with **the
+ * same join** — the play scratch is the buffer verbatim, so a live step's `(line, source)` matches
+ * the row it ran on exactly as the finished report's will.
+ */
+export function indexFromSteps(
+  units: readonly { readonly file?: string; readonly steps: readonly StepResult[] }[],
+  stamp: RunStamp,
+  path: string,
+  bufferText: string,
+  playScratch?: string,
+): RanIndex {
   const lines = linesOf(bufferText);
   const out = new Map<number, Ran>();
-  for (const entry of report.tests) {
-    if (entry.kind !== 'functional' && entry.kind !== 'crawl') continue;
+  for (const entry of units) {
     if (!belongsTo(entry.file, path, playScratch)) continue;
     let open: { step: StepResult; verdicts: Map<number, Verdict>; screenshot: string | null } | null = null;
     const close = (): void => {
@@ -197,7 +221,7 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
       // **The request's own line is what the whole group hangs on.** If it has moved or been
       // retyped, the response is not about what is written there and neither is anything under it.
       if (!stillReads(lines, step.line, step.source)) return;
-      out.set(step.line, ranOf(report, step, verdicts, screenshot, false));
+      out.set(step.line, ranOf(stamp, step, verdicts, screenshot, false));
     };
     for (const step of entry.steps) {
       // `M240-03` — a step of an action imported from another file is a line of *that* file. Before
@@ -208,6 +232,11 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
       if (OPENS_GROUP.has(step.kind)) {
         close();
         open = { step, verdicts: new Map(), screenshot: step.screenshot?.base64 ?? null };
+        /* **A step that opens a group and FAILED is its own row's mark** (`M257` `A`). A passing
+           opener is read by what came back — the response, the page — so it carries none; but an
+           `open` that never loaded or a request that never came back has nothing under it to
+           judge, and its row was the one row of the run with no mark at all. */
+        if (!step.ok && stillReads(lines, step.line, step.source)) open.verdicts.set(step.line, verdictOf(step));
         continue;
       }
       if (open === null) continue;
@@ -224,12 +253,12 @@ export function indexFromReport(report: RunReport, path: string, bufferText: str
 
 /** One group, as the pane carries it — the two joins below build the same shape from the same
  *  step, so they cannot disagree about what a recorded response is. */
-function ranOf(report: RunReport, step: StepResult, verdicts: ReadonlyMap<number, Verdict>, screenshot: string | null, changed: boolean): Ran {
+function ranOf(stamp: RunStamp, step: StepResult, verdicts: ReadonlyMap<number, Verdict>, screenshot: string | null, changed: boolean): Ran {
   return {
     line: step.line,
     source: step.source,
     scope: 'run',
-    at: report.startedAt,
+    at: stamp.at,
     steps: verdicts,
     response:
       step.response === undefined
@@ -241,7 +270,7 @@ function ranOf(report: RunReport, step: StepResult, verdicts: ReadonlyMap<number
             bodyText: step.response.bodyText,
             headers: step.response.headers,
           },
-    evidence: report.evidenceLevel ?? null,
+    evidence: stamp.evidence ?? null,
     changed,
     screenshot,
   };
@@ -272,6 +301,7 @@ function ranOf(report: RunReport, step: StepResult, verdicts: ReadonlyMap<number
  * a new step as far as any evidence can tell.
  */
 export function evidenceFor(report: RunReport, path: string, bufferText: string, line: number, playScratch?: string): Ran | null {
+  const stamp: RunStamp = { at: report.startedAt, evidence: report.evidenceLevel ?? null };
   const lines = linesOf(bufferText);
   const text = lines[line - 1] ?? '';
   let byLine: Ran | null = null;
@@ -292,9 +322,9 @@ export function evidenceFor(report: RunReport, path: string, bufferText: string,
         if (OPENS_GROUP.has(later.kind)) break;
         if (screenshot === null && later.screenshot !== undefined) screenshot = later.screenshot.base64;
       }
-      if (atLine && sameText) return { ...ranOf(report, step, new Map(), screenshot, false), line };
-      if (sameText) byText.push({ ...ranOf(report, step, new Map(), screenshot, false), line });
-      else if (byLine === null) byLine = ranOf(report, step, new Map(), screenshot, true);
+      if (atLine && sameText) return { ...ranOf(stamp, step, new Map(), screenshot, false), line };
+      if (sameText) byText.push({ ...ranOf(stamp, step, new Map(), screenshot, false), line });
+      else if (byLine === null) byLine = ranOf(stamp, step, new Map(), screenshot, true);
     }
   }
   if (byText.length === 1) return byText[0]!;
@@ -374,4 +404,25 @@ export function indexFromSend(args: {
     });
   }
   return out;
+}
+
+/** Where a played declaration's trace is, once there is one. */
+export interface PlayTrace {
+  readonly reportId: string;
+  readonly path: string;
+}
+
+/**
+ * The trace of `played` in `report`, or `null` — `M221` `A`'s `traceOf`, moved here with the stage's
+ * retirement (`M257` `A`, `D1407`): the trace link is the `screenshot` tab's now.
+ *
+ * **`trace.path` only, and `base64` is deliberately not read here.** A trace this pane can offer is
+ * one a run of *this* file wrote, and every such run writes a path (`D1171`); hashing 800 KB of
+ * base64 in the browser to recover a filename would be `D1171`'s defect back for a case that
+ * cannot occur.
+ */
+export function traceOf(report: RunReport, played: string, reportId: string, path: string, playScratch?: string): PlayTrace | null {
+  const test = report.tests.find((t) => t.kind === 'functional' && t.name === played && belongsTo(t.file, path, playScratch));
+  const at = test !== undefined && test.kind === 'functional' ? test.trace?.path : undefined;
+  return at === undefined ? null : { reportId, path: at };
 }

@@ -10179,6 +10179,18 @@ absent and the line says the level (`D987`). `send` replaces it with a fresh res
 recorded step: `not sent yet` and the button. *Not taken:* empty until sent; read-only until
 sent.
 
+### D1407
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1407` — a run draws itself in the rows and the evidence column; the stage retires.** (`D-RC-9`)
+Pressing ▶ lights the rows in order, lands each dot as it is judged, and puts the evidence
+column into a *follow* mode that shows the current step's response (or screenshot) and rests on
+the failing one. A one-line status under the header reads `running · step 3 of 7 · 1.2 s ·
+cancel`; cancel is `D1394`'s one graceful stop. `Stage.tsx` and its gates retire; the trace link
+for a browser run moves to the evidence column's `screenshot` tab. *Not taken:* a `playback` tab;
+keeping the bottom strip.
+
 ### D1408
 
 <sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
@@ -10190,6 +10202,19 @@ follow mode as a run. Stopping keeps the kept rows and drops the rest; nothing i
 save (`D1165`'s rule, unchanged). A locator field in an editing row carries a `⌖ pick` button
 that spawns `tflw pick` (`D1055`) and fills that field. The record panel and its 48 words
 retire. *Not taken:* a `record` tab in the evidence column; the panel as a card under the test.
+
+### D1409
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`D1409` — Run is a tree by verdict.** (`D-RC-11`) The headline carries one verdict (`1 FAILED · 16
+passed · 1 inconclusive · 3.1 s`; a cancelled run says `cancelled` in that position — F8's
+lesson), a run picker (`run 7d ago ▾`) in place of the chip row, `compare ▾`, and the artefact
+links. The left tree: `failed` (open), `inconclusive`, `passed n ▸` (folded), `security ·
+<summary> ▸`, `history ▸` (populated by `M249`'s kept runs; until then the row says so). Picking
+a test shows its steps on the right with the failing step open and the passing ones folded, and
+the same step from the compared run one line below it; `open in Compose` and `rerun this test`
+under it. *Not taken:* by file with passing files folded; no list on Run at all.
 
 ### D1412
 
@@ -14685,5 +14710,20 @@ milestone it waits on. Both files are gitignored; the repositories are public.
 - **E retirements.** The editor card, `ComposePane`'s right-column rendering of statements,
   the region-2 segment nav (its three tenants are now the evidence tabs), the record panel.
 - **F docs.** `ui/api.md`, `ui/browser.md`, `ui/load.md`, `ui/scans.md` re-cut; shots.
+
+### M257
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M254_PAGE_RECUT.md`</sub>
+
+**`M257` — Run and playback (`D-RC-9`, `D-RC-11`)**
+
+- **A playback in place.** The NDJSON stream drives the rows' dots and the evidence column's
+  follow mode; the status line and cancel; `Stage.tsx` retires; the trace link moves.
+- **B the Run tree.** `RunList` becomes the run picker; `ReportView` becomes the by-verdict
+  tree with folded rows; one headline verdict; the compared run's same step inline.
+- **C history and findings rows.** `security` as a folded row over the SARIF summary;
+  `history` over `M249`'s kept runs (the row exists and says *needs runs keep* if `M249`'s
+  reader is absent, which it will not be after `M253`).
+- **D docs.** `ui/a-run.md` re-cut; `runbook/page.md`'s run section.
 
 <!-- GENERATED:decisions:end -->

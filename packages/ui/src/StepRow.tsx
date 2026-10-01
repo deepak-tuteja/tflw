@@ -4,6 +4,7 @@
 // the response the run kept. The body reads exactly what the report holds: at `evidence headers
 // only` that is the runtime's `[omitted by evidence level]` marker, shown as such (`D987`).
 
+import type { ReactNode } from 'react';
 import type { StepResult } from './contract';
 import { ms, pretty } from './format';
 
@@ -19,7 +20,9 @@ function Screenshot({ base64, label }: { base64: string; label: string }) {
   );
 }
 
-export function StepRow({ step }: { step: StepResult }) {
+/** `children` is drawn under the step's own line and detail — the Run tree's *compared run* line
+ *  (`D1409`), which belongs to the step it is about rather than to a list beside the steps. */
+export function StepRow({ step, children, open }: { step: StepResult; children?: ReactNode; open?: boolean }) {
   if (step.kind === 'log') return <LogRow step={step} />;
   const hasTrace = step.request !== undefined;
   const hasShot = step.screenshot !== undefined || step.snapshotDiff !== undefined;
@@ -39,8 +42,9 @@ export function StepRow({ step }: { step: StepResult }) {
           {step.detail}
         </div>
       ) : null}
+      {children}
       {hasTrace || hasShot ? (
-        <details className="evidence" open={!step.ok}>
+        <details className="evidence" open={open ?? !step.ok}>
           <summary>{labels.join(', ')}</summary>
           {step.screenshot ? <Screenshot base64={step.screenshot.base64} label={step.ok ? 'screenshot' : 'screenshot at the failure'} /> : null}
           {step.snapshotDiff ? (
@@ -52,7 +56,9 @@ export function StepRow({ step }: { step: StepResult }) {
           ) : null}
           {hasTrace ? (
           <div className="trace">
-            <div className="panel req" data-request>
+            {/* Each panel scrolls (`.panel { overflow: auto }`), so each is a tab stop: a region a keyboard
+                cannot reach cannot be scrolled without a mouse (axe's `scrollable-region-focusable`). */}
+            <div className="panel req" data-request tabIndex={0} aria-label="the request">
               <div className="phead">
                 → {step.request!.method} {step.request!.url}
               </div>
@@ -60,7 +66,7 @@ export function StepRow({ step }: { step: StepResult }) {
               {step.request!.body ? <pre className="body">{pretty(step.request!.body)}</pre> : null}
             </div>
             {step.response ? (
-              <div className="panel res" data-response>
+              <div className="panel res" data-response tabIndex={0} aria-label="the response">
                 <div className="phead" data-status>
                   ← {step.response.status} {step.response.statusText} · {ms(step.response.durationMs)}
                 </div>

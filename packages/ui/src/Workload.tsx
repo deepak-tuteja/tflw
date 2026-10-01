@@ -10,7 +10,7 @@
 
 import { Sparkline, thresholdPast } from './History';
 import type { HistoryView } from './contract';
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { createColumnHelper, createSortedRowModel, rowSortingFeature, sortFn_basic, tableFeatures, useTable } from '@tanstack/react-table';
 import type { LoadMetrics, WorkloadTestResult } from './contract';
 import { describeWorkload } from '../../reporter/src/workload-format.ts';
@@ -96,7 +96,7 @@ function timelineSeries(a: LoadMetrics, b: LoadMetrics | null, pick: (p: LoadMet
   return { x: xs, series };
 }
 
-export function Workload({ test, other, history }: { test: WorkloadTestResult; other?: Comparison | null; history?: HistoryView | null }) {
+export function Workload({ test, other, history, actions }: { test: WorkloadTestResult; other?: Comparison | null; history?: HistoryView | null; actions?: ReactNode }) {
   const b = other?.test ?? null;
   const m = test.metrics;
   // A new array identity on every theme change, which is what pulls each `useMemo` below — and
@@ -132,6 +132,7 @@ export function Workload({ test, other, history }: { test: WorkloadTestResult; o
         <span data-test-name>{test.name}</span>
         <span className="badge">workload</span>
       </h3>
+      {actions}
       <p className="muted" data-workload-shape>
         {describeWorkload(test.workload)}
       </p>

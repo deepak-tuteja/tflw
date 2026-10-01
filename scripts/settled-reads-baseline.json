@@ -1,13 +1,13 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 938,
-    "atRisk": 849,
-    "high": 319,
-    "medium": 56,
-    "low": 474,
-    "declared": 69,
-    "inPage": 104,
+    "reads": 954,
+    "atRisk": 862,
+    "high": 310,
+    "medium": 63,
+    "low": 489,
+    "declared": 76,
+    "inPage": 105,
     "inRetry": 49
   },
   "tests": {
@@ -19,13 +19,13 @@
       },
       "the run list is the report directories, each row carrying its own results.json counts": {
         "high": 0,
-        "medium": 0,
+        "medium": 1,
         "low": 1
       },
       "the functional view renders every test, step, detail, status and body the report holds": {
         "high": 6,
         "medium": 0,
-        "low": 12
+        "low": 11
       },
       "at `evidence headers only` the page states the level and shows the marker the report holds, never a body": {
         "high": 3,
@@ -45,7 +45,7 @@
       "the workload view: the shape, every stat, every threshold and every endpoint the report holds, in the report's words": {
         "high": 10,
         "medium": 0,
-        "low": 13
+        "low": 14
       },
       "the charts are the report's timeline and histogram: painted, one point per second, and the legend reads the report's numbers under the cursor": {
         "high": 1,
@@ -60,7 +60,7 @@
       "the findings block: every finding the report holds, grouped by rule in the report's order, with its site, its words, its fingerprint, the gate's verdict and the KB's fix; and the rule census": {
         "high": 8,
         "medium": 0,
-        "low": 20
+        "low": 21
       },
       "two runs' findings side by side: the same finding's verdict in the other run, and the other run's findings this one lacks": {
         "high": 2,
@@ -68,9 +68,9 @@
         "low": 2
       },
       "a run from the page: the live pane fills from the stream, and the kept directory is what the page then shows": {
-        "high": 8,
+        "high": 2,
         "medium": 2,
-        "low": 4
+        "low": 2
       },
       "a run cancelled from the page: its kept directory says so above the report, with the exit the process ended with": {
         "high": 2,
@@ -257,6 +257,11 @@
         "medium": 0,
         "low": 3
       },
+      "`M240` `F` (`M239-05`): a run chip is relative, its tip is the absolute form with the zone, and the report head spells the same instant": {
+        "high": 0,
+        "medium": 0,
+        "low": 2
+      },
       "`M256` `B`/`D`: the evidence is ≥ 40% of the pane at 1440, and at 1000 it is the same box folded under the picked row": {
         "high": 0,
         "medium": 0,
@@ -357,10 +362,10 @@
         "medium": 0,
         "low": 3
       },
-      "`M221` `A`+`B`: the stage is under the columns with room for the viewer, and ▶ no longer refuses an unsaved buffer": {
-        "high": 2,
-        "medium": 5,
-        "low": 2
+      "`M221` `B` + `M257` `A`: the stage has retired, the columns claim the window at rest, and ▶ no longer refuses an unsaved buffer": {
+        "high": 0,
+        "medium": 3,
+        "low": 1
       },
       "`M219` `B`: an `open` starts a session, and so does a `call` the project index says opens a page": {
         "high": 2,
@@ -657,11 +662,6 @@
         "medium": 0,
         "low": 2
       },
-      "`M223` `E`: with a trace up, the playback height is the reader’s — and the drag survives the frame (`D1199`)": {
-        "high": 1,
-        "medium": 0,
-        "low": 1
-      },
       "`M223` `G`: a step is content and its keyword is a label — one ink on three surfaces, a chip that lifts rather than paints, and a rail that belongs to the group (`D1202`, `D1203`, `D1204`)": {
         "high": 0,
         "medium": 0,
@@ -892,10 +892,10 @@
         "medium": 0,
         "low": 3
       },
-      "`M227` `E`: the scratch notice closes the playback region rather than leading it (`D1236`) — `D`'s footer is retired with it (`M256`)": {
+      "`M257` `A`: ▶ draws the run in the rows — a status line, the mark on the row it ran, the trace in the screenshot tab, and the scratch sentence only once a press wrote it": {
         "high": 0,
-        "medium": 0,
-        "low": 1
+        "medium": 3,
+        "low": 2
       },
       "`M228` `A`: a scan assertion earns region 2 a `scan` segment on any door (`D1239`), and `TF060` reaches the pane (`D1240`)": {
         "high": 0,
@@ -950,7 +950,7 @@
       "the run list marks the open report, counts `current` as a property, and keeps the directory name out of the row": {
         "high": 4,
         "medium": 0,
-        "low": 3
+        "low": 4
       },
       "the reading placeholder is not a pane: `[data-compose-pane]` answers only for a pane with a file in it": {
         "high": 1,
@@ -976,6 +976,16 @@
         "high": 0,
         "medium": 0,
         "low": 2
+      },
+      "`M257` `B` (`D1409`): Run is a tree by verdict — its counts are results.json's, it opens on the first failure with that step open, and the headline carries one verdict": {
+        "high": 0,
+        "medium": 1,
+        "low": 9
+      },
+      "`M257` `A`: the rows light in the stream's order, the column rests on the failure, and a cancelled run leaves the rows it never reached not run": {
+        "high": 0,
+        "medium": 4,
+        "low": 5
       }
     },
     "packages/cli/test/ui-appearance.test.ts": {
