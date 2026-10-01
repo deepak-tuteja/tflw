@@ -4,7 +4,7 @@ pageClass: ui-shots
 
 # SCANS
 
-> `#/scan` — *crawl a surface and judge every response against a severity bar.*
+> `#/?kind=scan` — *crawl a surface and judge every response against a severity bar.*
 
 A scan is a test whose assertion grades the response as a whole rather than one field of it, against
 a bar you set.
@@ -16,7 +16,7 @@ a bar you set.
 
 The **scan** tab in the right-hand column is the one thing on this surface a scan cannot run
 without: **what this project has declared it is allowed to reach**. It is read from `tflw.config`'s
-`authorized target` lines, it is not editable here, and it links to the Config tab where it is.
+`authorized target` lines, it is not editable here, and it links to the Config panel where it is.
 
 Like a load test's plan, it is earned by a statement and not granted by a chip — a test asserting a
 scan matcher shows it under the API chip too.

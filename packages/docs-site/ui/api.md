@@ -75,7 +75,7 @@ the assertions under it pass, instead of sleeping for a guessed number of second
 
 A `header` or `csrf` line. Not an omission and not a missing builder — both are dispatched by the
 parser from a `session` block in `tflw.config` only, and the printer has no case for either, so
-there is no file this pane edits that could hold one. Sessions are edited on the **Auth** and
-**Config** tabs, which is where they live.
+there is no file this pane edits that could hold one. Sessions live in `tflw.config` and are edited
+in the **Config** panel; **Auth** shows which one a test runs as.
 
 Next: [Assertions in depth](/guide/assertions) teaches the language this pane writes.

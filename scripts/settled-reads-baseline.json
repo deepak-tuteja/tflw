@@ -1,13 +1,13 @@
 {
   "note": "Recorded by `npm run verify:settled-reads:update`. See scripts/verify-settled-reads.mjs. An equality, not a ceiling (`M201`): a repair updates this file, and the diff is the record.",
   "totals": {
-    "reads": 954,
+    "reads": 955,
     "atRisk": 862,
     "high": 310,
     "medium": 63,
     "low": 489,
-    "declared": 76,
-    "inPage": 105,
+    "declared": 84,
+    "inPage": 106,
     "inRetry": 49
   },
   "tests": {

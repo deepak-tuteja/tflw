@@ -33,7 +33,8 @@ request or page it judged — while the steps that passed stay folded. A run tha
 Picking a test draws it on the right: every step it ran, in order; a failed step names what was
 expected and what arrived, in the same words the terminal uses. **open in Compose** takes you to
 that test's line in its file; **rerun this test** runs just it again. A search box and a file picker
-narrow the tree, and the tree says when it is showing a part.
+narrow the tree, and the tree says when it is showing a part — and opens every group that holds
+a match, so a name searched for in a passed run is on screen rather than inside a fold.
 
 Two more rows sit under the tests:
 

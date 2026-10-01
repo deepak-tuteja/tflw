@@ -46,8 +46,9 @@ the honest scaffold stops where the author's knowledge starts.
   with the rows in it without keeping any. **stop** (or closing the browser) keeps what you kept and
   drops the rest. Nothing reaches the file until you **write**.
 
-There is no Send here. A browser step is not a request you can re-issue for a look; the pane
-**plays** instead, which runs the steps against a real page.
+There is no Send here. A browser step is not a request you can re-issue for a look; **▶** beside
+the test runs it against a real page instead, and the run draws itself in the rows as it goes (see
+[Running from the page](/ui/a-run#running-from-the-page)).
 
 ## Every browser construct is editable here
 

@@ -44,14 +44,14 @@ This is the one rule worth carrying out of this section, because nothing on the 
 **the chip you have on changes what the list shows and what ▶ runs, and nothing about the file you
 are looking at.**
 
-What Compose can do with a file is read off the file: a file with a page in it can be played and
-recorded, a file with a request can be sent, a file with a workload line shows the plan panel, a file
+What Compose can do with a file is read off the file: a file with a page in it can be recorded, a file with a request can be sent, a file with a workload line shows the plan panel, a file
 declaring an authorized target shows the targets block — under every chip, `all` included. Switch
 chips with a file open and the pane does not change; switch files and it does.
 
 ## Compose
 
-Compose is the authoring surface: the test's steps in file order, and the one you pick as a form.
+Compose is the authoring surface: the test's steps in file order, and the one you pick edited in
+place.
 The **Source** tab beside it shows the bytes the write will produce, so nothing is written blind.
 
 It is **one pane, not four**. Every file draws the same surface at the same size; what differs is
@@ -67,7 +67,7 @@ order*: **send this** issues the selected request and the ones above it that fee
 all** issues every request in the test. Each says how many it will fire before you press it.
 
 Neither grades anything. Send shows you what came back; the assertions are checked when the test
-runs, from the Run tab. Send also writes a scratch file beside your project, which the page tells
+runs — from ▶, with the verdicts landing on the same rows. Send also writes a scratch file beside your project, which the page tells
 you about if your `.gitignore` does not already list it.
 
 **A picked row edits where it stands.** A request, a statement, the test or the file: picking it

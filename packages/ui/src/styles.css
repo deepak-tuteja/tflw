@@ -1,4 +1,7 @@
-/* ── THE FOUR THEMES (`M213` `S0`, `D1096`). ───────────────────────────────────────────────────
+/* ── THE FOUR THEMES (`M213` `S0`, `D1096`; two in the picker since `M258`, `D1411`). ──────────
+ *
+ * The picker offers Paper and Terminal; Instrument and Ribbon stay here as complete sets, reached
+ * by `?theme=` and by nothing a reader is shown (`D1411`).
  *
  * A theme here is not a palette. It is a complete token set — colour, **type**, and **shape** —
  * because the four differ in density and letterform as much as in hue, and a "theme" that only
@@ -133,6 +136,24 @@
   --mono: 'JetBrains Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* ── COMPACT (`M258` `A`, `D1411`). ──────────────────────────────────────────────────────────
+ *
+ * Density is a switch beside the theme, not a third and fourth theme: the picker offers Paper and
+ * Terminal, and either can be compact. Compact takes two pixels off `--unit` — every padding and
+ * gap in this file is a multiple of it — and sets titles to 13 px, which is Terminal's own size.
+ *
+ * Written as one value per theme rather than as `calc(var(--unit-rest) - 2px)`, because an
+ * unregistered custom property computes to its token stream: a `calc` here would read back as the
+ * text `calc(9px - 2px)` to everything that asks for `--unit`, where a pixel count reads as one.
+ * The bare `[data-tflw-density]` rule is Paper's (the default, on the bare `:root`); the other three
+ * are (0,3,0) and win over it whatever the order. Instrument and Ribbon are not in the picker but
+ * stay complete sets behind `?theme=`, so they get a compact value too.
+ */
+:root[data-tflw-density='compact'] { --unit: 7px; --title-size: 13px; }
+:root[data-tflw-theme='terminal'][data-tflw-density='compact'] { --unit: 5px; }
+:root[data-tflw-theme='instrument'][data-tflw-density='compact'] { --unit: 4px; }
+:root[data-tflw-theme='ribbon'][data-tflw-density='compact'] { --unit: 9px; }
+
 /* ── THE BASE LAYER (`M213` `S0`, `D1097`). ────────────────────────────────────────────────────
  *
  * `M213-01`: 19 of the 53 controls on the API compose pane computed to the browser's own chrome —
@@ -224,6 +245,8 @@ input[type='checkbox'], input[type='radio'] { all: revert; font: inherit; flex: 
 .legend kbd { font-family: var(--mono); font-size: 11px; border: var(--border) solid var(--line); border-radius: 3px; padding: 0 4px; }
 .theme-pick select { font-size: 11px; }
 .theme-pick label { text-transform: var(--label-transform); letter-spacing: var(--label-spacing); }
+/* `M258` (`D1411`): the density switch is a checkbox and its word, one control's width. */
+.theme-pick .density { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; cursor: pointer; } /* the label is the target (`D1325`'s 24 px) */
 
 /* Layout (U2): the project on the left, the runs across the top, the selected run below. */
 /* `M216` — the pane's width is the reader's, so the column is a property the grip writes and the
