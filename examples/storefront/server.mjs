@@ -16,9 +16,9 @@
 // stdlib only, one file, no build. `node server.mjs` and it is up — `npm run shop` in a project
 // `tflw init --example` wrote, which is this directory copied.
 import { createServer } from 'node:http';
-import { readFileSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 /** The three files the order page is made of, read once at start-up. Served from this origin so
@@ -274,6 +274,10 @@ export function startStorefront(port = PORT) {
   });
 }
 
-if (process.argv[1] && import.meta.url === new URL(process.argv[1], 'file://').href) {
+// Run as `node server.mjs` (`npm run shop`), not imported. `pathToFileURL`, never `new URL(argv[1],
+// 'file://')`: that reads `D:\\…\\server.mjs` as a URL whose scheme is `d:`, so on Windows the shop
+// exited 0 without listening (`M259-06`). And the real path, because Node resolves the main module
+// through symlinks while `argv[1]` keeps them (macOS's `/tmp` is one).
+if (process.argv[1] && import.meta.url === pathToFileURL(realpathSync(process.argv[1])).href) {
   startStorefront().then(() => process.stdout.write(`the coffee shelf is on http://127.0.0.1:${PORT}\n`));
 }

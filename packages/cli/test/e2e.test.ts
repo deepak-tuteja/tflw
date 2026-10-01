@@ -949,6 +949,29 @@ test('`M259` `A`: `SHOP_URL` moves the shop and the suite together — one varia
   }
 });
 
+test('`M259-06`: `node server.mjs` named through a symlinked directory still starts the shop', { skip: process.platform === 'win32' && 'directory symlinks need a privilege there; the test above is the Windows half' }, async () => {
+  // The run-as-main guard compared `import.meta.url` (which Node resolves through symlinks) with
+  // `argv[1]` (which it does not), so this exited 0 having printed nothing — the same silence the
+  // Windows drive letter caused. macOS's `/tmp` is such a symlink.
+  const top = await mkdtemp(join(tmpdir(), 'tflw-e2e-example-link-'));
+  const real = join(top, 'real');
+  await mkdir(real);
+  await execFileAsync('node', [cliEntry, 'init', '--example'], { cwd: real });
+  await symlink(real, join(top, 'link'), 'dir');
+  const port = await freePort();
+  const shop = spawn(process.execPath, [join(top, 'link', 'server.mjs')], { env: { ...process.env, SHOP_URL: `http://127.0.0.1:${port}` }, stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    const announced = await new Promise<string>((resolve, reject) => {
+      shop.stdout!.once('data', (chunk: Buffer) => resolve(chunk.toString()));
+      shop.once('exit', (code) => reject(new Error(`the shop exited (${code}) before it said where it was`)));
+    });
+    assert.equal(announced.trim(), `the coffee shelf is on http://127.0.0.1:${port}`);
+  } finally {
+    shop.kill();
+    await rm(top, { recursive: true, force: true });
+  }
+});
+
 test('`M241` `E` (`D1325`, review E4): a report says who ran it, on which host, with which tflw', async () => {
   // Through the built CLI in an empty directory, for the quickstart test's reason above: the claim is
   // about the artifact a stranger's run leaves behind. The three facts are compared with the OS's own
