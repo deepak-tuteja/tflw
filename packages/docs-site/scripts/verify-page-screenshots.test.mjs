@@ -35,6 +35,10 @@ import { DEFAULT_VIEWPORT, DOCS_PAGE_DIR, SHOTS, THEMES, VIEWS, appearanceOf, sc
 const here = fileURLToPath(new URL('.', import.meta.url));
 const SITE = join(here, '..');
 const PAGE_MD_DIR = join(SITE, 'ui');
+/* `M261` — the page's pictures are embedded by two surfaces now: the `/ui/` reference, and chapter 7
+   of the walkthrough, whose `walk-*` views exist for it alone. Both are read, so a chapter shot no
+   page embeds still fails, and so does an embed of one nobody cut. */
+const EMBED_DIRS = [PAGE_MD_DIR, join(SITE, 'runbook', 'start')];
 const DIST = join(SITE, '.vitepress', 'dist');
 const MANIFEST_PATH = join(DOCS_PAGE_DIR, 'manifest.json');
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -43,12 +47,14 @@ const RECUT = 'run: node --import tsx packages/ui/scripts/make-screenshots.mjs';
 /** Every `![alt](/ui/NAME.png){.class}` the `/ui/` surface writes, wherever it writes it. */
 function embeds() {
   const out = [];
-  if (!existsSync(PAGE_MD_DIR)) return out;
-  for (const name of readdirSync(PAGE_MD_DIR).sort()) {
-    if (!name.endsWith('.md')) continue;
-    const text = readFileSync(join(PAGE_MD_DIR, name), 'utf8');
-    for (const m of text.matchAll(/!\[([^\]]*)\]\(\/ui\/([A-Za-z0-9._-]+)\)(\{[^}]*\})?/g)) {
-      out.push({ page: name, alt: m[1], shot: m[2], attrs: m[3] ?? '' });
+  for (const dir of EMBED_DIRS) {
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir).sort()) {
+      if (!name.endsWith('.md')) continue;
+      const text = readFileSync(join(dir, name), 'utf8');
+      for (const m of text.matchAll(/!\[([^\]]*)\]\(\/ui\/([A-Za-z0-9._-]+)\)(\{[^}]*\})?/g)) {
+        out.push({ page: name, alt: m[1], shot: m[2], attrs: m[3] ?? '' });
+      }
     }
   }
   return out;
@@ -147,7 +153,7 @@ test('the `/ui/` surface embeds every shot, and embeds nothing that is not there
   const found = embeds();
   assert.ok(found.length > 0, `the /ui/ surface embeds no pictures at all — ${PAGE_MD_DIR} has no image reference`);
   const referenced = new Set(found.map((e) => e.shot));
-  for (const name of SHOTS) assert.ok(referenced.has(name), `no /ui/ page embeds ${name}`);
+  for (const name of SHOTS) assert.ok(referenced.has(name), `no /ui/ page or walkthrough chapter embeds ${name}`);
   for (const e of found) assert.ok(shotExists(e.shot), `${e.page} embeds /ui/${e.shot}, which does not exist`);
 });
 
@@ -222,12 +228,15 @@ test('the built site serves the pictures at the deployed base path', () => {
   for (const name of SHOTS) {
     assert.ok(existsSync(join(DIST, 'ui', name)), `${name} did not reach dist/ui/ — it will 404 on the deployed site`);
   }
-  const html = readdirSync(join(DIST, 'ui'), { withFileTypes: true })
-    .filter((d) => d.isFile() && d.name.endsWith('.html'))
-    .map((d) => readFileSync(join(DIST, 'ui', d.name), 'utf8'))
+  const html = ['ui', join('runbook', 'start')]
+    .flatMap((dir) =>
+      readdirSync(join(DIST, dir), { withFileTypes: true })
+        .filter((d) => d.isFile() && d.name.endsWith('.html'))
+        .map((d) => readFileSync(join(DIST, dir, d.name), 'utf8')),
+    )
     .join('\n');
   assert.ok(html.length > 0, 'the built site has no /ui/ HTML at all');
   for (const name of SHOTS) {
-    assert.ok(html.includes(`/tflw/ui/${name}`), `the built /ui/ HTML does not reference /tflw/ui/${name} — the base path was not applied`);
+    assert.ok(html.includes(`/tflw/ui/${name}`), `the built /ui/ and runbook/start/ HTML does not reference /tflw/ui/${name} — the base path was not applied`);
   }
 });

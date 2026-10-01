@@ -26,6 +26,10 @@
 // its output matches the output fence after it — the shop saying where it is — and stops it, with
 // everything it started, when the walkthrough ends.
 //
+// A background command that prints a `tflw ui` address (`http://127.0.0.1:<port>/?token=…`) is
+// asked for its project with that token once its output matches (`M261`): the page's clicks are its
+// own e2e tests' job, but a served page that does not answer is a chapter that cannot be followed.
+//
 // ` ```sh runbook-manual ` is a command the gate cannot run (a `git clone` of the repository it is
 // testing; a window only a person can use). It is a **declared** exception, never a silent one: the
 // gate prints the count and each one's page and line on every run. An untagged ` ```sh ` fence in a
@@ -261,6 +265,14 @@ export async function runWalkthrough(chapters, { tgz, keep = false, show = false
         actual = read();
       }
       shown();
+      if (outputMatches(expected, actual) && step.background) {
+        const unanswered = await pageUnanswered(readFileSync(outFile, 'utf8'));
+        if (unanswered !== null) {
+          failures.push({ file: step.file, line: step.line, why: unanswered, output: actual });
+          if (show) continue;
+          break;
+        }
+      }
       if (!outputMatches(expected, actual)) {
         failures.push({ file: step.file, line: step.line, why: 'its output is not what the page shows', output: `--- the page shows\n${expected}\n--- the run printed\n${actual}` });
         // An author reading every output under `--show` wants the rest of the walkthrough too; an
@@ -282,6 +294,26 @@ export async function runWalkthrough(chapters, { tgz, keep = false, show = false
   }
   const placeholders = problems.filter((p) => p.placeholder).map((p) => ({ ...p, output: '' }));
   return { ok: failures.length === 0 && placeholders.length === 0, failures: [...failures, ...placeholders], ran, manual, problems };
+}
+
+/**
+ * Whether the page a background step served answers, or `null` when it does, or when the step
+ * printed no page address at all. `M261`: `tflw ui --no-open` prints the address and nothing else
+ * happens until somebody opens it, so this is the one request the reader's browser would make first.
+ */
+export async function pageUnanswered(printed) {
+  const m = /http:\/\/127\.0\.0\.1:(\d+)\/\?token=([\w-]+)/.exec(printed);
+  if (m === null) return null;
+  const at = `http://127.0.0.1:${m[1]}/api/project?token=${m[2]}`;
+  try {
+    const res = await fetch(at, { signal: AbortSignal.timeout(10_000) });
+    if (res.status !== 200) return `the page it served answered /api/project with ${res.status}`;
+    const project = await res.json();
+    if (!Array.isArray(project.files) || project.files.length === 0) return 'the page it served lists no files — it is not serving this project';
+    return null;
+  } catch (e) {
+    return `the page it served did not answer /api/project: ${e instanceof Error ? e.message : String(e)}`;
+  }
 }
 
 function report(result, label) {
@@ -330,6 +362,7 @@ async function selfTest(tgz) {
     { name: 'an output fence that drifted', pages: ['install.md', 'drifted.md'], expect: { ok: false, at: 'drifted.md', why: /not what the page shows/ } },
     { name: 'an untagged shell fence', pages: ['install.md', 'untagged.md'], expect: { ok: false, at: 'untagged.md', why: /untagged shell fence/, ran: 0 } },
     { name: 'a pre-1.0 twin read under the flag', pages: ['install.md', 'twins.md'], expect: { ok: true, manual: 1 } },
+    { name: 'a page address nothing answers', pages: ['install.md', 'dead-page.md'], expect: { ok: false, at: 'dead-page.md', why: /did not answer \/api\/project/ } },
   ];
   let bad = 0;
   for (const c of cases) {

@@ -201,11 +201,34 @@ for (const { page, link, group } of PILLAR_OVERVIEWS) {
   const missing = placed.filter((c) => c.at === -1).map((c) => c.page);
   const railOrder = placed.filter((c) => c.at !== -1).sort((a, b) => a.at - b.at);
   const outOfOrder = railOrder.filter((c, i) => i > 0 && c.number <= railOrder[i - 1].number).map((c) => `${c.number} after ${railOrder[railOrder.indexOf(c) - 1].number}`);
-  if (chapters.length === 0 || missing.length > 0 || outOfOrder.length > 0) {
+  // `M261`: chapter 7 landed, so the skip `M260` allowed is over — the numbers run 1 to N.
+  const numbers = chapters.map((c) => c.number).sort((a, b) => a - b);
+  const gap = numbers.findIndex((n, i) => n !== i + 1);
+  if (chapters.length > 0 && gap !== -1 && missing.length === 0 && outOfOrder.length === 0) {
+    console.error(`✗ runbook/start/ — the chapters are numbered ${numbers.join(', ')}: chapter ${gap + 1} is missing`);
+    failures++;
+  } else if (chapters.length === 0 || missing.length > 0 || outOfOrder.length > 0) {
     console.error(`✗ runbook/start/ — ${chapters.length === 0 ? 'no chapters found' : missing.length > 0 ? `not in the rail: ${missing.join(', ')}` : `out of chapter order in the rail: ${outOfOrder.join(', ')}`}`);
     failures++;
   } else {
     console.log(`✓ runbook/start/ — all ${chapters.length} chapters are in the rail, in chapter order (${railOrder.map((c) => c.number).join(', ')})`);
+  }
+}
+
+// `M261` (`G3`): every page of the `/ui/` section is linked from the walkthrough's page chapter or
+// from its reference companion, `runbook/page.md`. The section has 7,000 words and pictures of every
+// surface; before `M259` the runbook reached it only through the glossary. Read off the directory,
+// so a new `/ui/` page is asked about the day it is written.
+{
+  const sources = ['runbook/start/page.md', 'runbook/page.md'];
+  const text = (await Promise.all(sources.map((f) => readFile(join(ROOT, f), 'utf8').catch(() => '')))).join('\n');
+  const pages = (await readdir(join(ROOT, 'ui'))).filter((f) => f.endsWith('.md')).map((f) => (f === 'index.md' ? '' : f.replace(/\.md$/, '')));
+  const unlinked = pages.filter((p) => !new RegExp(`\\]\\(/ui/${p}(?:[)#])`).test(text)).map((p) => `/ui/${p}`);
+  if (pages.length === 0 || unlinked.length > 0) {
+    console.error(`✗ /ui/ — ${unlinked.length > 0 ? `linked from neither ${sources.join(' nor ')}: ${unlinked.join(', ')}` : 'no pages found'}`);
+    failures++;
+  } else {
+    console.log(`✓ /ui/ — all ${pages.length} pages are linked from the page chapter or its reference`);
   }
 }
 

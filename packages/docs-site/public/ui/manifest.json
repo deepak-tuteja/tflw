@@ -1,5 +1,5 @@
 {
-  "inputs": "ddcd4a4d208c8df6952b507228b62780a2287f96784a702c47811cf22eff0710",
+  "inputs": "94e1c5e2a283891546fab30fd79ef602b52cdbfab89cc410bc373be8c6fff462",
   "inputCount": 111,
   "shots": [
     {
@@ -91,6 +91,46 @@
       "name": "run-paper.png",
       "width": 2120,
       "height": 798
+    },
+    {
+      "name": "walk-edit-terminal.png",
+      "width": 2144,
+      "height": 1568
+    },
+    {
+      "name": "walk-edit-paper.png",
+      "width": 2120,
+      "height": 1546
+    },
+    {
+      "name": "walk-failed-terminal.png",
+      "width": 2144,
+      "height": 1568
+    },
+    {
+      "name": "walk-failed-paper.png",
+      "width": 2120,
+      "height": 1546
+    },
+    {
+      "name": "walk-run-terminal.png",
+      "width": 2144,
+      "height": 1596
+    },
+    {
+      "name": "walk-run-paper.png",
+      "width": 2120,
+      "height": 1562
+    },
+    {
+      "name": "walk-config-terminal.png",
+      "width": 2144,
+      "height": 1182
+    },
+    {
+      "name": "walk-config-paper.png",
+      "width": 2120,
+      "height": 1180
     }
   ],
   "viewport": {
@@ -133,8 +173,24 @@
     "run": {
       "width": 1440,
       "height": 900
+    },
+    "walk-edit": {
+      "width": 1440,
+      "height": 900
+    },
+    "walk-failed": {
+      "width": 1440,
+      "height": 900
+    },
+    "walk-run": {
+      "width": 1440,
+      "height": 900
+    },
+    "walk-config": {
+      "width": 1440,
+      "height": 900
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-10-01T14:31:42.677Z"
+  "cutAt": "2026-10-01T15:36:05.607Z"
 }
