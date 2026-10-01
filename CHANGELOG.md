@@ -17,6 +17,16 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — flag, diagnostic and keyword descriptions are written for the reader (M264)
+
+- **Every flag effect, diagnostic meaning, generator note and keyword summary is plain user text.**
+  These strings are printed by `tflw --help`, the editor's hover and completion, the docs site's
+  reference pages, `tflw docs` and SPEC.md's generated tables, and 119 of them carried milestone
+  and decision ids, review-finding numbers and the history of how each rule came to be. Each now
+  says what triggers it, why that matters, and how to fix it; the history stays in DECISIONS.md and
+  this file.
+- `tflw docs`' check that no design id reaches the terminal now reads the reference tables too.
+
 ### Changed — `tflw docs` prints the docs pages, not SPEC (M263)
 
 - **`tflw docs` prints this site's Guide and Reference pages**, grouped as the site's sidebar groups
