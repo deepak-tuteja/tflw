@@ -6,8 +6,8 @@ ordinary tests with one line more, and both run under `tflw run`.
 
 ## A test at a rate
 
-Open `tests/load.tflw`. Its first test is the catalogue read from chapter 3, with a **workload**
-line and two **thresholds** added:
+Open `tests/load.tflw`. Its first test is the catalogue read from chapter 3, with a **[workload](/runbook/glossary#workload)**
+line and two **[thresholds](/runbook/glossary#threshold)** added:
 
 ```tflw
 @catalogue @workload
@@ -60,7 +60,7 @@ report.
 
 ## A scan
 
-`tests/scan.tflw` ends with a `crawl`:
+`tests/scan.tflw` ends with a [`crawl`](/runbook/glossary#crawl):
 
 ```tflw
 @functional
@@ -91,7 +91,8 @@ npx tflw run tests/scan.tflw
 
 The findings, when there are any, are in `report.html` and in `report/findings.sarif`, which
 GitHub's code scanning reads. To see one, delete `HttpOnly; ` from the `set-cookie` line in
-`server.mjs`, restart the shop, and run the scan again.
+`server.mjs`, restart the shop, and run the scan again. A finding you decide to live with goes into a
+[baseline](/runbook/glossary#baseline) by its [fingerprint](/runbook/glossary#fingerprint), and stops failing the run.
 
 ## `authorized target`: why the config names the shop
 

@@ -9,12 +9,13 @@ VS Code's Test Explorer with a run button beside each.
 <Published :when="false">
 
 Until 1.0 the extension is not on the Marketplace, so it is packaged from the clone chapter 1 made.
-`npm run package` writes one `.vsix` file, which VS Code installs as it would a download. The last
-line opens the project:
+`npm run package` writes one `.vsix` file, which VS Code installs as it would a download. It runs
+inside `packages/vscode/`, so `$PWD` in the output name puts the file where you are. The last line
+opens the project:
 
 ```sh runbook-manual
 cd ../tflw
-npm run package -w tflw-vscode -- -o tflw.vsix
+npm run package -w tflw-vscode -- -o "$PWD/tflw.vsix"
 code --install-extension tflw.vsix
 cd ../coffee-shelf
 code .

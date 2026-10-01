@@ -7,6 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 // @ts-expect-error — plain .mjs script, no type declarations
 import { parseSpecToTopics, slugify } from '../scripts/gen-docs.mjs';
+import { DOCS_TOPICS } from '../src/docs-data.generated.js';
 
 const FIXTURE = `# testFlow SPEC (fixture)
 
@@ -85,4 +86,20 @@ test('slugify lowercases, strips backticks/punctuation, and collapses whitespace
   assert.equal(slugify('Array quantifiers'), 'array-quantifiers');
   assert.equal(slugify('`retry`'), 'retry');
   assert.equal(slugify('Events, report, CI outputs'), 'events-report-ci-outputs');
+});
+
+test('M262: a status marker between two trailing parentheticals is stripped with both', () => {
+  const topics = parseSpecToTopics(
+    '## 15. Distribution (P#35–39, amended by P#41–50) 🔧 (the publish waits for the owner\'s word, `D1379`)\n\nBody.\n',
+  );
+  assert.deepEqual(Object.keys(topics), ['distribution']);
+  assert.equal(topics['distribution']!.title, 'Distribution');
+  assert.equal(topics['distribution']!.group, 'Distribution');
+});
+
+test('M262: no title or group `tflw docs` prints carries a SPEC id or a status marker', () => {
+  const leaks = Object.entries(DOCS_TOPICS)
+    .flatMap(([slug, t]) => [slug, t.title, t.group].map((s) => [slug, s] as const))
+    .filter(([, s]) => /P#|\bD\d{3,}\b|✅|🔧|🔮|\bp\d{2,}/u.test(s));
+  assert.deepEqual(leaks, []);
 });

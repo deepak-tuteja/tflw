@@ -13,7 +13,7 @@ install the `.vsix` that writes ([the walkthrough's chapter 8](/runbook/start/ed
 step by step):
 
 ```sh
-npm run package -w tflw-vscode -- -o tflw.vsix
+npm run package -w tflw-vscode -- -o "$PWD/tflw.vsix"
 code --install-extension tflw.vsix
 ```
 
