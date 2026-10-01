@@ -297,9 +297,10 @@ async function checkInvocations(commands) {
  * `CliFlagEntry.command`'s union) and nothing compared any two of them. Three of the six were
  * wrong, each differently.
  *
- * Both surfaces are read the way a reader meets them: the reference page as its own markdown, and
- * SPEC §12 through `tflw docs cli` — the *shipped binary's* copy, per `DT-04`, since that is what
- * `docs-data.generated.ts` bakes in and what a user without the repo actually gets.
+ * The reference page is read as its own markdown. SPEC §12 was read through `tflw docs cli`, the
+ * shipped binary's copy (`DT-04`), while the binary shipped SPEC's sections; since `M263` it ships
+ * the docs pages instead, so §12 is read from SPEC.md itself and the binary is asked the question
+ * that is now its own: does `tflw docs cli` print a section for every command that ships.
  *
  * Symmetric on purpose. A command deleted from the dispatch but left in the docs is the M57 bug
  * class (`spec-data.ts` documenting a `tflw load` that no longer existed), so an extra row fails
@@ -317,19 +318,34 @@ async function checkCommandCoverage(commands) {
   }
   const sections = new Set([...page.matchAll(/^## `tflw ([a-z][a-z-]*)/gm)].map((m) => m[1]));
 
-  const { stdout, code } = await runCli(['docs', 'cli'], ROOT);
+  let spec;
+  try {
+    spec = readFileSync(join(here, '../../../SPEC.md'), 'utf8');
+  } catch {
+    spec = undefined;
+  }
+  const section12 = spec === undefined ? undefined : /^## 12\. CLI[^\n]*\n([\s\S]*?)^## 13\./m.exec(spec)?.[1];
   // Only the ✅ Shipped table counts: a command listed under 🔮 Planned is documented as *absent*,
   // which is worse than silence for something that ships.
-  const shipped = code === 0 ? stdout.split(/\*\*🔮 Planned/)[0] : undefined;
+  const shipped = section12?.split(/\*\*🔮 Planned/)[0];
   const rows = shipped === undefined ? undefined : new Set([...shipped.matchAll(/^\| `tflw ([a-z][a-z-]*)/gm)].map((m) => m[1]));
-  if (rows === undefined) fail('tflw docs cli', 'could not read SPEC §12 out of the shipped binary', 'the command-coverage check cannot run without it');
+  if (rows === undefined) fail('SPEC.md §12', 'could not read the ✅ Shipped table', 'the command-coverage check cannot run without it');
+
+  // The shipped binary's `tflw docs cli` is this page rendered, so each command's section has to
+  // reach a user who only has the package.
+  const { stdout, code } = await runCli(['docs', 'cli'], ROOT);
+  const printed = code === 0 ? new Set([...stdout.matchAll(/^`tflw ([a-z][a-z-]*)[^\n]*\n-+$/gm)].map((m) => m[1])) : undefined;
+  if (printed === undefined) fail('tflw docs cli', 'the shipped binary did not print the CLI reference', 'the command-coverage check cannot run without it');
 
   for (const command of [...commands].sort()) {
     if (!sections.has(command)) {
       fail('reference/cli.md', `\`tflw ${command}\` ships but has no section here`, `add a \`## \\\`tflw ${command}\\\`\` heading — this page claims to cover every subcommand`);
     }
+    if (printed !== undefined && !printed.has(command)) {
+      fail('tflw docs cli', `\`tflw ${command}\` ships but the binary's \`tflw docs cli\` prints no section for it`, 'the page has the section but the generated docs do not: rebuild, or see `scripts/gen-docs.mjs`');
+    }
     if (rows !== undefined && !rows.has(command)) {
-      fail('SPEC.md §12', `\`tflw ${command}\` ships but has no row in the ✅ Shipped table`, 'SPEC §12 is what `tflw docs cli` prints, so a missing row is missing from the shipped binary too');
+      fail('SPEC.md §12', `\`tflw ${command}\` ships but has no row in the ✅ Shipped table`, 'SPEC §12 is the design record\'s list of what ships');
     }
   }
   for (const documented of [...sections].sort()) {

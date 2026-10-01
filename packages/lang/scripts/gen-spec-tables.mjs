@@ -10,7 +10,7 @@
 //
 // `renderMatcherTable`/`renderGeneratorTable`/`renderDiagnosticsTable` are exported (pure,
 // string-in/string-out) so a test can exercise them against small fixture arrays instead of the
-// real manifest - same reasoning `gen-docs.mjs`'s `parseSpecToTopics` test already uses. The
+// real manifest - same reasoning `gen-docs.mjs`'s renderer tests use. The
 // file's own top-level code only runs the read/write side when invoked directly, not when
 // imported.
 

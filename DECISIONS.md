@@ -14844,4 +14844,16 @@ they meant by a runbook is **the whole of tflw, CLI and page, for a new user**. 
 maintainer's book; that one left both public repositories the same day (`D1350` amended, tflw#268 /
 tflw-tests#132).
 
+### M263
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M263` — `tflw docs` prints the user's pages, not SPEC (added 2026-10-01, owner's word)**
+
+**Why.** Chapter 4 teaches `tflw docs`, and what it prints is SPEC's prose verbatim: of 71 topics, 63
+cite `§` numbers, 43 name `M…`/PLAN, 40 carry `D…` ids and 34 `P#`. Stripping ids would not help —
+`tflw docs unique` explains M181's repair and the dogfood suite's thirteen degraded tests, which is
+how tflw was built, not how to use it. Taken over the two alternatives (§11 item 5): a third body of
+hand-written cheatsheet prose would drift; relabelling SPEC leaves the new user where they are.
+
 <!-- GENERATED:decisions:end -->

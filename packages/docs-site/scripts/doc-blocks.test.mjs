@@ -375,8 +375,9 @@ test('a review-ledger row is caught, and it is the worst of the five rather than
 });
 
 test('notation inside a fence is tflw output; the same line outside one is prose', () => {
-  // `# emitted by tflw M137d — sec/error-detail-disclosure` is a real line on the security pages:
-  // the tool's own output, reproduced verbatim. Checking it would be the guard objecting to a
+  // `# emitted by tflw M137d — sec/error-detail-disclosure` was a real line on the security pages
+  // until `M263` took the milestone out of the header tflw writes: the tool's own output, reproduced
+  // verbatim. Checking it would be the guard objecting to a
   // transcript. `D697` paid for this distinction in the citation gate; it is the same one.
   const line = '# emitted by tflw M137d — sec/error-detail-disclosure';
   assert.deepEqual(notation(['# x', '', '```sh', line, '```', ''].join('\n')), []);

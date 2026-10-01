@@ -17,6 +17,16 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — `tflw docs` prints the docs pages, not SPEC (M263)
+
+- **`tflw docs` prints this site's Guide and Reference pages**, grouped as the site's sidebar groups
+  them, instead of SPEC.md's sections, which are a design record. `tflw docs cli` prints the CLI
+  reference with every flag table filled in from the same manifest the site reads; `tflw docs cli
+  run` prints one section; a word that is not a topic is looked for among every page's section
+  titles, so `tflw docs unique` prints *`unique` vs. `random`*. Links to another printed page read
+  `(tflw docs <topic>)`, others as a URL.
+- The `.tflw` repro files a scan writes open `# emitted by tflw — <rule>`, without a milestone id.
+
 ### Changed — the glossary is the walkthrough's, and troubleshooting grows by symptom (M262)
 
 - **The glossary defines the words the walkthrough uses, and each is linked where a chapter first

@@ -246,7 +246,7 @@ export function renderAuthzRepro(f: AuthzFinding): string {
   const owners = f.owners.join(', ');
   const id = f.ids[0] ?? '';
   const header =
-    `# emitted by tflw M130 — ${f.rule}\n` +
+    `# emitted by tflw — ${f.rule}\n` +
     `# ${f.method} ${path} served ${owners ? `\`${owners}\`'s` : 'the owner\'s'} resource to \`${f.principal}\`\n` +
     viaLine(f) +
     rerunLine(f);
@@ -332,7 +332,7 @@ export function renderInputRepro(f: InputHandlingFinding): string | null {
   const path = pathFor(f);
   const as = f.principal ? ` as ${f.principal}` : '';
   const header =
-    `# emitted by tflw M137d — ${f.rule}\n` +
+    `# emitted by tflw — ${f.rule}\n` +
     `# ${f.method} ${path} — ${f.location} carrying \`${f.payloadId}\`` +
     `${f.invariant ? ` returned ${f.invariant}` : ''}\n` +
     viaLine(f) +

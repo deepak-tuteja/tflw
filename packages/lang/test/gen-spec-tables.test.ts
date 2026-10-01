@@ -1,7 +1,6 @@
 // `renderMatcherTable`/`renderGeneratorTable` are pure functions of small arrays, so this tests
 // them against fixture entries instead of the real ~13-row manifest — fast, and stable against
-// future spec-data.ts content edits (same reasoning gen-docs.test.ts already uses for
-// `parseSpecToTopics`).
+// future spec-data.ts content edits (same reasoning gen-docs.test.ts uses for its renderer).
 
 import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
