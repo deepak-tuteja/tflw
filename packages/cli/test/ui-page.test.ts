@@ -758,6 +758,73 @@ test('`M239` `C`: every door draws under the page\'s Content-Security-Policy wit
   assert.match(res.headers.get('content-security-policy') ?? '', /script-src 'self' 'nonce-/);
 });
 
+test('`M258` `A` (`D1411`): the picker offers Paper and Terminal, `compact` is a switch on either, and `?theme=` reaches the other two without keeping them', async () => {
+  const root = page.locator('html');
+  // one-shot: a token's computed value; every call below follows a wait on the attribute it resolves from.
+  const unit = (): Promise<string> => root.evaluate((el) => el.ownerDocument.defaultView!.getComputedStyle(el).getPropertyValue('--unit').trim());
+  // one-shot: as `unit`, for the title size.
+  const title = (): Promise<string> => root.evaluate((el) => el.ownerDocument.defaultView!.getComputedStyle(el).getPropertyValue('--title-size').trim());
+  // one-shot: storage, read after the write a waited attribute already proved happened.
+  const stored = (key: string): Promise<string | null> => root.evaluate((el, k) => el.ownerDocument.defaultView!.localStorage.getItem(k), key);
+  try {
+    await page.goto(`${pageUrl}#/`);
+    await page.reload();
+    const options = page.locator('[data-theme-select] option');
+    await options.nth(1).waitFor({ state: 'attached' });
+    // Waited on above by its second entry; read whole once it is there — the list is static markup.
+    assert.deepEqual(await options.evaluateAll((os) => os.map((o) => o.getAttribute('value'))), ['paper', 'terminal'], 'the picker offers two themes');
+    // one-shot: the untold page's tokens — Paper at rest, the pre-paint script having run before the wait above.
+    assert.deepEqual([await unit(), await title()], ['9px', '15px'], 'Paper at rest');
+
+    // The switch: two pixels off `--unit` and 13 px titles, on either theme.
+    await page.locator('[data-density-toggle]').check();
+    await page.locator('html[data-tflw-density="compact"]').waitFor({ state: 'attached' });
+    // one-shot: the attribute waited on above is what the stylesheet reads, so the token is already resolved.
+    assert.deepEqual([await unit(), await title()], ['7px', '13px'], 'Paper, compact');
+    await page.locator('[data-theme-select]').selectOption('terminal');
+    await page.locator('html[data-tflw-theme="terminal"][data-tflw-density="compact"]').waitFor({ state: 'attached' });
+    // one-shot: as above — both attributes are on the root, so the cascade has nothing left to wait for.
+    assert.deepEqual([await unit(), await title()], ['5px', '13px'], 'Terminal, compact');
+    // one-shot: a storage read after the write the attribute wait above already proved happened.
+    assert.deepEqual([await stored('tflw.theme'), await stored('tflw.density')], ['terminal', 'compact'], 'both choices are kept');
+
+    // Kept across a reload, by the pre-paint script and not by React.
+    await page.reload();
+    await page.locator('html[data-tflw-theme="terminal"][data-tflw-density="compact"]').waitFor({ state: 'attached' });
+    await page.locator('[data-density-toggle]:checked').waitFor();
+    await page.locator('[data-density-toggle]').uncheck();
+    await page.locator('html:not([data-tflw-density])').waitFor({ state: 'attached' });
+    // one-shot: the attribute's removal waited on above is the cascade's whole input.
+    assert.deepEqual([await unit(), await title(), await stored('tflw.density')], ['7px', '13px', null], 'Terminal at rest, and the switch forgotten');
+
+    // `?theme=` reaches a set the picker does not offer, shows it in the select, and keeps nothing.
+    await page.goto(`${pageUrl}&theme=ribbon#/`);
+    await page.reload();
+    await page.locator('html[data-tflw-theme="ribbon"]').waitFor({ state: 'attached' });
+    await page.locator('[data-theme-select] option[value="ribbon"]').waitFor({ state: 'attached' });
+    // one-shot: the select's value is React's first render, which the option waited on above is part of.
+    assert.equal(await page.locator('[data-theme-select]').inputValue(), 'ribbon', 'the select says what is on');
+    // one-shot: nothing on this page writes storage unless a choice is made, and none was.
+    assert.equal(await stored('tflw.theme'), 'terminal', 'an address is not a choice');
+    // `M258-02`: the picker follows the root's attribute whoever sets it, not what it read at mount.
+    await root.evaluate((el) => el.setAttribute('data-tflw-theme', 'terminal')); // one-shot: a write, not a read
+    await page.locator('[data-theme-pick="terminal"]').waitFor();
+    // The control: a stored name the picker does not offer is not applied without the address.
+    await root.evaluate((el) => el.ownerDocument.defaultView!.localStorage.setItem('tflw.theme', 'ribbon')); // one-shot: a write, not a read
+    await page.goto(`${pageUrl}#/`);
+    await page.reload();
+    await page.locator('[data-theme-select] option').nth(1).waitFor({ state: 'attached' });
+    // one-shot: the inline script runs before the body exists, so the select drawn above is after it.
+    assert.equal(await root.getAttribute('data-tflw-theme'), null, 'a stored Ribbon is not a theme the picker restores');
+  } finally {
+    // one-shot: the writes, undone, so the next test starts on an untold page.
+    await root.evaluate((el) => {
+      el.ownerDocument.defaultView!.localStorage.removeItem('tflw.theme');
+      el.ownerDocument.defaultView!.localStorage.removeItem('tflw.density');
+    });
+  }
+});
+
 test('WebUI at `evidence headers only`: no screenshot, no trace, and the sentence saying why, under every browser test', async () => {
   const report = oracle.headers!;
   await openReport('headers');

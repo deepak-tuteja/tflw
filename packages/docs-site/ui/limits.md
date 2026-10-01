@@ -16,8 +16,8 @@ page reads those and adds nothing of its own.
 
 **It keeps nothing on the server.** No database, no sidecar file, no hidden directory. Which file,
 which tab and which chip you are on live in the address bar, so a link is shareable and a reload changes
-nothing. Two conveniences live in your browser and nowhere else: your theme, and the last file you
-had open, per project — so a bare address opens where you left it. Everything else is the project on disk, which means the page can be closed at
+nothing. Three conveniences live in your browser and nowhere else: your theme, whether it is
+compact, and the last file you had open, per project — so a bare address opens where you left it. Everything else is the project on disk, which means the page can be closed at
 any moment without losing anything that was not already a file.
 
 **It does not lint your taste.** The page will happily show you a passing test that asserts nothing.
@@ -38,7 +38,7 @@ row; below 900 the page stacks, and nothing is designed for a phone.
 ## Not yet
 
 **Sessions and envs are written in Config, not in a form.** Compose writes tests, hooks, actions
-and crawls, and anything its forms do not cover the **Source** tab edits directly — an editor over
+and crawls, one line at a time in place, and anything its rows do not cover the **Source** tab edits directly — an editor over
 the real file, with the language's own highlighting, the checker's answer underlined as you type,
 undo, and the language's own completion as you type. The two things a file resolves against rather than holds, `session` and `env` blocks,
 live in `tflw.config`, and the Config tab is the same editor over that file. A second, form-shaped
@@ -47,7 +47,7 @@ editor over one file would be two answers to one question.
 **Auth is read-only.** It shows the sessions and targets a file resolves against, and each row
 links to the line in Config that declares it.
 
-**The page does not move a declaration between files.** Composing works on the file you have
+**The page does not move a test, hook or action between files.** Composing works on the file you have
 selected. The page moves, renames and deletes whole files, shows what each would change first, and
 rewrites every `import` that names them; moving one session, hook or action from one file to
 another is an edit in each file, made in Source or Config. The one cross-file rewrite tflw makes

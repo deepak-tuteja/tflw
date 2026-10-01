@@ -14,7 +14,7 @@ picked. Learn it once and nothing else on the page needs learning.
 ## The header
 
 One row: the project's name, the **env** a run reads, **▶ run**, and `more…` — then, on the right,
-**Auth**, **Config**, which tflw this is, `?` and the theme.
+**Auth**, **Config**, which tflw this is, `?`, the theme and **compact**.
 
 **▶ runs exactly what the file list shows.** Its label is the command read back, with how many tests
 that is: `▶ run all · 38`, `▶ run API · 19`, `▶ run checkout.tflw · 7`, `▶ run @smoke · 5`. The
@@ -69,7 +69,7 @@ A tab is a stage of one file's life. It never changes which file you are looking
 
 | tab | what it shows |
 |---|---|
-| **Compose** | the test's steps, and the one you picked as a form |
+| **Compose** | the test's steps — the one you picked is edited in place — and what the last run got back for it |
 | **Source** | the file itself — and, while you are composing, the bytes the write will produce |
 | **Run** | what happened when this project last ran — the tab's dot is that run's verdict |
 
@@ -78,9 +78,12 @@ file's life, so none of them is a tab.
 
 ## Themes
 
-The page ships four themes, and they differ in type, density and shape as much as in colour. The
-pictures throughout this section are two of them — **Paper**, the light one the page opens in, and
-**Terminal**, the dark one — and which you see follows this site's own appearance setting.
+The header's picker offers two themes: **Paper**, the light one the page opens in, and
+**Terminal**, the dark one. They differ in type and shape as well as colour. The pictures throughout
+this section are both of them, and which you see follows this site's own appearance setting.
 
-The choice is remembered in your browser and nowhere else. It is not written to the project, so it
-cannot show up in a diff.
+Beside the picker, **compact** tightens the spacing and sets smaller titles, on either theme. Use it
+when you want more rows of a long file on one screen.
+
+Both choices are remembered in your browser and nowhere else. They are not written to the project,
+so they cannot show up in a diff.

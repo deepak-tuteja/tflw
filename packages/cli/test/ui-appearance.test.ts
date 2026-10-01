@@ -191,9 +191,12 @@ let page: Page;
 /** The bundle this file built, read in `after()` by `M234`'s coverage collector. */
 let staticDir: string;
 
-/** `Terminal` first because it is the default (`D1107`) — the geometry pass runs on whatever is
- *  first here, and it should be the thing a reader actually gets. */
-const THEMES = ['terminal', 'instrument', 'ribbon', 'paper'] as const;
+/** What a reader can be wearing: since `M258` (`D1411`) the picker offers two themes and a
+ *  `compact` switch, so the gates read **two themes × two densities**. Instrument and Ribbon are
+ *  still complete sets in the stylesheet, reached by `?theme=`, and are deliberately not judged
+ *  here — nothing a reader is shown leads to them. `Paper` first because it is the default
+ *  (`D1315`): the geometry pass runs on whatever is first, and it should be what a reader gets. */
+const THEMES = ['paper', 'paper compact', 'terminal', 'terminal compact'] as const;
 type Theme = (typeof THEMES)[number];
 
 const DOORS = ['api', 'browser', 'load', 'scan'] as const;
@@ -300,9 +303,13 @@ const at = async (door: string, tab: string): Promise<void> => {
   await page.locator(`[data-tabstrip="${tab}"]`).waitFor();
 };
 
+/** A look is a theme and, after a space, `compact` — the two attributes `index.html` stamps. */
 const wear = (theme: Theme): Promise<void> =>
-  page.evaluate((t) => {
-    document.documentElement.setAttribute('data-tflw-theme', t);
+  page.evaluate((look) => {
+    const root = document.documentElement;
+    root.setAttribute('data-tflw-theme', look.split(' ')[0]!);
+    if (look.endsWith(' compact')) root.setAttribute('data-tflw-density', 'compact');
+    else root.removeAttribute('data-tflw-density');
   }, theme);
 
 interface Paint { readonly path: string; readonly prop: string; readonly value: string }
@@ -366,7 +373,7 @@ const probe = (): Promise<Probe> =>
 
     const label = (el: ElLike): string => {
       const cls = typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '';
-      const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
+      const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme' && a.name !== 'data-tflw-density');
       return `${el.tagName.toLowerCase()}${cls}${data ? `[${data.name}]` : ''}`;
     };
 
@@ -1133,7 +1140,7 @@ const inkProbe = (): Promise<InkProbe> =>
     const doc = document;
     const label = (el: ElLike): string => {
       const cls = typeof el.className === 'string' && el.className ? `.${el.className.trim().split(/\s+/).slice(0, 2).join('.')}` : '';
-      const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
+      const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme' && a.name !== 'data-tflw-density');
       return `${el.tagName.toLowerCase()}${cls}${data ? `[${data.name}]` : ''}`;
     };
 
@@ -1558,7 +1565,7 @@ test('every native control on every view computes the body’s own font-family, 
           const isCode = el.matches('.cm-content');
           if (isCode) code++;
           if (f !== (isCode ? mono : body)) {
-            const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme');
+            const data = [...el.attributes].find((a) => a.name.startsWith('data-') && a.name !== 'data-tflw-theme' && a.name !== 'data-tflw-density');
             out.push(`${el.tagName.toLowerCase()}${data ? `[${data.name}]` : ''}${el.className ? '.' + String(el.className).split(' ')[0] : ''} → ${f}`);
           }
         }

@@ -4,7 +4,7 @@ pageClass: ui-shots
 
 # LOAD tests
 
-> `#/load` — *run the work you already wrote at a rate, and hold it to a threshold.*
+> `#/?kind=load` — *run the work you already wrote at a rate, and hold it to a threshold.*
 
 A load test is not a different kind of test. It is a test with a **workload** line saying how often
 to run it, and **thresholds** saying what counts as holding up.

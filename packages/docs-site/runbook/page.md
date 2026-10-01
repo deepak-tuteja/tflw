@@ -11,7 +11,8 @@ another machine, and the pasted URL carries the token.
 
 ## Writing
 
-**Compose** writes tests, hooks, actions and crawls through forms. Each row of a test has **↑** and
+**Compose** writes tests, hooks, actions and crawls in place: pick a row and it becomes its own
+editor. Each row of a test has **↑** and
 **↓** to move it one place (**Alt+↑**/**Alt+↓** on a focused row); a request moves with the
 assertions under it, those assertions move among themselves, and nothing moves out of its own
 test, hook or request. **Source** is an editor over the
@@ -28,8 +29,8 @@ from disk** beside the refusal shows the file as it is now, and drops the draft.
 
 ## Running
 
-**▶** beside a test runs that test; **▶** in the header runs the selection with the env, workers and
-`--headed` shown beside it. A run started here is an ordinary `tflw run`: it writes `report/` and
+**▶** beside a test runs that test; **▶** in the header runs what the file list shows, with the env
+beside it and `workers` and `--headed` under **more…** when the run can spend them. A run started here is an ordinary `tflw run`: it writes `report/` and
 keeps itself under `report/runs/<id>/`, and the dots beside each test are its last kept runs. While it
 runs, the file you are on shows it — each step's mark lands on its row, a line under the file's name
 says how far it has got and offers **cancel**, and the right-hand column follows the step it has

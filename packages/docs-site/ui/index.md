@@ -51,7 +51,7 @@ kind of test to start with — and the answer is `tflw init`'s own flag. See [Th
 
 The page opens on the project itself. Across the top is one **header**: the project's name, the env a
 run reads, **▶ run** with what it will run and how many (`▶ run all · 38`), and on the right the two
-project facts — **Auth** and **Config** — then `?` and the theme. Under it, one file's three stages:
+project facts — **Auth** and **Config** — then `?`, the theme and **compact**. Under it, one file's three stages:
 **Compose**, **Source** and **Run**.
 
 Down the left is the file list, and at its head the four **kinds** — **API**, **BROWSER**, **LOAD**
@@ -107,8 +107,8 @@ The page answers three questions that a terminal answers badly:
   you what each one tests, which ones failed, and which ones the checker cannot parse.
 - **What happened last run?** `tflw run` writes a `report.html` you open afterwards. The page reads
   the same run in place, beside the source that produced it.
-- **What would this test look like?** Composing a request as a form and reading the `.tflw` it
-  produces is a faster way to learn the language than writing it and running the checker.
+- **What would this test look like?** Composing a step in place and reading the `.tflw` line it
+  becomes is a faster way to learn the language than writing it and running the checker.
 
 None of that replaces the command line. `tflw run` is what CI executes and what a commit is judged
 by; the page is where a person works before that.
