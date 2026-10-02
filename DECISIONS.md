@@ -14751,4 +14751,19 @@ came to be rather than stating it.
   and widen its `D` pattern to two digits.
 - **Green:** zero ids in the five manifests' user strings, the exclusion gone, the box suite green.
 
+### M265
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M259_NEW_USER_RUNBOOK.md`</sub>
+
+**`M265` — `.last-run.json` retired, and the walkthrough's live views cut the same way twice (added 2026-10-02)**
+
+**Why.** Two things the arc left half done.
+- **`report/.last-run.json`.** It was written by every run and read by nothing in tflw since
+  `--failed` moved to the kept runs (`D1414`), yet it was listed on the page's Run header and in
+  `tflw run --help`.
+- **The walk shots.** Chapter 7's two live views are the only screenshots of a run the shoot starts
+  itself, and they could never be re-cut byte-identical: the port, the start time, every duration
+  and the shop's `date` header changed every cut. Each milestone that moved the screenshot inputs
+  kept the old PNGs and committed only the manifest.
+
 <!-- GENERATED:decisions:end -->

@@ -21,7 +21,7 @@ import { RUN_OWNED_CONDITIONAL_MEMBERS } from './report-dir.js';
 import { ARTIFACT_CONTRACT } from './artifact-contract.js';
 
 /** The members every run writes, beside the conditional ones. */
-export const RUN_OWNED_MEMBERS = ['report.html', 'junit.xml', 'results.json', '.last-run.json'] as const;
+export const RUN_OWNED_MEMBERS = ['report.html', 'junit.xml', 'results.json'] as const;
 
 /** The kept runs' directory — named in the artifact contract (`report.keptRuns`), which the sibling reads. */
 export const RUNS_DIR = ARTIFACT_CONTRACT.report.keptRuns;

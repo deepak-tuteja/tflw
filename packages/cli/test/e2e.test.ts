@@ -3366,9 +3366,9 @@ test('`D1414`: `--failed` replays what is failing, and a partial run in between 
       assert.match(replay.stdout, /fails/);
       assert.doesNotMatch(replay.stdout, /passes/);
 
-      // `.last-run.json` is still written, and still says it was narrowed — it is read by nothing now.
-      const filtered = JSON.parse(await readFile(join(dir, 'report', '.last-run.json'), 'utf8')) as { failed: unknown[]; filter?: string };
-      assert.equal(filtered.filter, '--failed');
+      // `M265`: `.last-run.json` is no longer written. Nothing had read it since `D1414`, and the
+      // kept runs are the one record of what is failing.
+      await assert.rejects(readFile(join(dir, 'report', '.last-run.json'), 'utf8'), { code: 'ENOENT' });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -3497,8 +3497,9 @@ test('`tflw run --failed` narrows further on repeated invocations once a test is
       assert.match(stdout, /fails/);
       assert.match(stdout, /1\/1 passed/);
 
-      const lastRun = JSON.parse(await readFile(join(dir, 'report', '.last-run.json'), 'utf8')) as { failed: unknown[] };
-      assert.deepEqual(lastRun.failed, []);
+      // Nothing is failing now, so the next `--failed` says so and runs the full suite.
+      const again = await execFileAsync('node', [cliEntry, 'run', '--failed', '--no-color'], { cwd: dir });
+      assert.match(again.stdout, /no test is failing in the kept runs — running the full suite/);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

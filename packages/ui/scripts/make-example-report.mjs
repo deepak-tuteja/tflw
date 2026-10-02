@@ -17,7 +17,7 @@
 // ## The layout, which is not the layout `tflw run` writes
 //
 // `tflw run` writes the report **flat** — `report/report.html`, `results.json`, `junit.xml`,
-// `.last-run.json`, `findings.sarif` — and there is no `report/runs/` in its output at all.
+// `findings.sarif` — and there is no `report/runs/` in its output at all.
 // `runs/<name>/` is the *page's* run history, so the shoot copies this directory to
 // `report/runs/local` inside its scratch tree and the page reads it as one run. That indirection
 // is `make-fixtures.mjs`'s, unchanged; this file is its sibling for the example.

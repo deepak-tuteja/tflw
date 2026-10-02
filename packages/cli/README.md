@@ -242,7 +242,8 @@ npx tflw run --env staging --parallel 4 --seed 42 --now 2026-01-01T00:00:00.000Z
 ```
 
 Every run always writes `report/report.html`, `report/junit.xml`, and `report/results.json`
-(plus `report/.last-run.json` for `--failed` and `report/events.ndjson` under `--format ndjson`).
+(plus `report/events.ndjson` under `--format ndjson`). `--failed` reads the kept runs under
+`report/runs/`.
 See the [full CLI flags reference](https://deepak-tuteja.github.io/tflw/reference/cli) for what
 each flag does, or [Running & debugging tests](https://deepak-tuteja.github.io/tflw/guide/debugging)
 for a walkthrough.

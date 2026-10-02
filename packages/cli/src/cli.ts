@@ -131,7 +131,6 @@ import {
   writeJunitXml,
   writeResultsJson,
   writeSarif,
-  writeLastRun,
   describeRunFilter,
   writeEventsNdjson,
   clearRunOwnedMembers,
@@ -1870,7 +1869,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // is `D1414`** (`M255`): a test whose newest verdict in the kept runs (`report/runs/`, `M249`) is a
   // failure — pytest's `--lf` rule, which 111.2 already named as the model, and the same index the
   // page's `failed` chip and its dots read, so ▶ under that chip and this flag are one set. It used to
-  // be *the previous run's* failures from `.last-run.json`, and that was a second answer to the same
+  // be *the previous run's* failures from `.last-run.json` (retired in `M265`), and that was a second answer to the same
   // question: a partial run (`--tag smoke`, one file, the page's Send) redefined it, which is what
   // `FU-23`'s printed warning existed to confess. Nothing failing: the full suite, with a note
   // (111.2, unchanged). Suppressed under `--format ndjson` (111.4).
@@ -2325,8 +2324,7 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   //    `RunReport.tests` and `selfDiagnosis`/`inconclusive`/`aborted` are top-level `RunReport`
   //    fields, so merging across files (`mergeReports`) already covers the load side too — no more
   //    separate `LoadReport` artifact, and no more "only the first file's load results are kept"
-  //    limitation. Write report.html + junit.xml + results.json (decision 111.1) + .last-run.json
-  //    (decision 111.2, always overwritten — unconditional, not just under --failed) +
+  //    limitation. Write report.html + junit.xml + results.json (decision 111.1) +
   //    events.ndjson (decision 111.4, only under --format ndjson), print the summary. A second
   //    full-report redaction pass (decision 56) here — on top of the one each `runProgram` call
   //    already did on its own file's report — closes the *cross-file* half of the ordering window:
@@ -2442,11 +2440,6 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
     reproSubjects,
     ...(sourceRoot ? { sourceRoot, fileBase: cwd } : {}),
   });
-  // D250 — the record now carries how this run was narrowed, so the *next* `--failed` can say what
-  // it is replaying. Still unconditional and still always overwritten: not writing on a filtered
-  // run was rejected for introducing a second silence (run `--tag smoke`, then `--failed`, and
-  // replay something unrelated to what you just watched fail).
-  await writeLastRun(merged, reportDir, describeRunFilter({ tags: args.tags, kinds: args.kinds, only: args.only, failed: args.failed, shard: args.shardRaw }));
   // M63 (V2-02): the persisted event log gets the same final redaction pass as every other
   // artifact. It is written after the whole run, so — unlike the live stdout stream, which is gone
   // by the time a late `env()` reveals a secret — the redactor here is fully populated. Skipping
@@ -4630,7 +4623,7 @@ const VERB_HELP: readonly VerbHelp[] = [
         '                                                      --workers <n> forks n *processes* to generate one file\'s workload-bearing tests\' load;',
         '                                                      a no-op warning on a file with none (unrelated to --parallel; default: 1, no forking)',
         '                                                      --skip-workload skips every workload-bearing test, for fast iteration on functional tests alone',
-        '                                                      always written: report/{report.html,junit.xml,results.json,.last-run.json} — workload-bearing',
+        '                                                      always written: report/{report.html,junit.xml,results.json} — workload-bearing',
         '                                                      tests render inline alongside functional ones, no separate load-* artifacts',
         '                                                      also written when a browser run has one: report/assets/{screenshots,traces}/',
         '                                                      Ctrl-C flushes a partial report; exit 3 = inconclusive (generator saturated), 130 = aborted, else 0/1',

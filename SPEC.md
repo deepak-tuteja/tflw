@@ -97,7 +97,7 @@ project/
   payloads/            # file-backed request bodies (§5.3)
   data/                # file-backed data tables, *.csv / *.json (§7.5)
   helpers/             # JS/TS escape-hatch modules (§11)
-  report/              # per-run report.html + junit.xml + results.json + .last-run.json (output)
+  report/              # per-run report.html + junit.xml + results.json (output)
 ```
 
 ## 3. The config dialect — `tflw.config` (P#27–31) ✅
@@ -4050,8 +4050,8 @@ regression (§9.9, M4b) carries its own before/after/diff triptych in `report.ht
   **A green run is unchanged in every respect**: the toggle starts on All and nothing is collapsed
   that was not collapsed before.
 - CI: summary to stdout, `junit.xml` (seed in properties), meaningful exit codes. `report/` also
-  always gets `results.json` (the same redacted `RunReport` as JSON) and `.last-run.json` (this
-  run's failing tests) — see the CI ergonomics subsection below. While a run started outside
+  always gets `results.json` (the same redacted `RunReport` as JSON) — see the CI ergonomics
+  subsection below. While a run started outside
   `tflw ui` is in flight, `report/.running.json` (its pid, keep id, start and files) and
   `report/.running.ndjson` (its events so far, redacted, one line each) say so; both are removed once
   the run is kept, and `tflw ui` follows the run through them (`D1392`).
@@ -4233,8 +4233,7 @@ certify that anything is safe to share.
 
   It read `report/.last-run.json` — *the previous run's* failures — until `M255`, and that was a
   second answer to the same question: a partial run (`--tag smoke`, one file, the page's Send)
-  redefined the set, which a printed warning had to confess (`FU-23`). `.last-run.json` is still
-  written by every run, with its `filter` field; nothing in tflw reads it.
+  redefined the set, which a printed warning had to confess (`FU-23`). `M265` stopped writing it.
 - `--bail` — stops after the first failing test's final (post-retry) verdict. Under
   `--parallel > 1`, the pool stops pulling new files once a failure is seen; files already claimed
   finish normally (no hard-abort/cancellation-token plumbing into the interpreter). `--parallel`,
