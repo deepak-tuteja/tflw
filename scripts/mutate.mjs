@@ -1150,15 +1150,9 @@ const REGISTRY = [
     find: '  return ` ${c.dim}(${test.attempts.length} attempts)${c.reset}`;',
     replace: "  return '';",
   },
-  {
-    id: 'last-run-filter-recorded-as-empty-string',
-    milestone: 'm125d',
-    pkg: '@tflw/reporter',
-    file: 'packages/reporter/src/last-run.ts',
-    what: "`describeRunFilter` returns `''` instead of `undefined` for a full run, so `renderLastRun` writes a `filter` key on every record. `--failed` keys its clause on presence, so every replay — including one after a completely unfiltered run — claims the last run was \"filtered by ``\". The file still parses, still round-trips, and the filtered case still reads correctly",
-    find: "  return parts.length > 0 ? parts.join(' ') : undefined;",
-    replace: "  return parts.join(' ');",
-  },
+  // `last-run-filter-recorded-as-empty-string` (M125d, `FU-23`: a full run's `.last-run.json`
+  // claiming a `filter` of nothing) was retired at `M265` with the file whose key it quoted.
+  // `describeRunFilter` lives on in `run-filter.ts`, and its own test still asserts `undefined`.
   // M125c (`FU-14` · `FU-21` ≡ `B4-11`) — the two the plan named in advance (the candidate count
   // re-derived from a second query, the speculative line replacing rather than preceding the final
   // diagnosis) plus two for `B4-11`'s halves. Every one leaves the diagnosis visibly present, well

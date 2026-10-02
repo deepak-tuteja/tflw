@@ -26,8 +26,8 @@
 //  2. *`ok: false` beside `failed: 0` is not a disagreement.* It reads "this run did not pass, and
 //     no test failed", which is precisely what an abort is. The pair only looked contradictory while
 //     `ok` was a synonym for `failed === 0`, which is the thing being fixed.
-//  3. *`tflw run --failed` never read this field.* `.last-run.json` is built from `TestResult.ok`
-//     (`reporter/src/last-run.ts`), one entry per failing *test*; the aborted repro writes
+//  3. *`tflw run --failed` never read this field.* `.last-run.json` was built from `TestResult.ok`
+//     (`reporter/src/last-run.ts`, retired with the file in `M265`), one entry per failing *test*; the aborted repro writes
 //     `{"failed":[]}` before and after this change. That claim was wrong when it was filed.
 //
 // And a fourth thing turned up only by running the sibling cause rather than reading it: the console

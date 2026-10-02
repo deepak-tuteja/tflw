@@ -235,6 +235,7 @@ export function screenshotInputs() {
     join(UI_ROOT, 'vite.config.ts'),
     join(UI_ROOT, 'package.json'),
     join(here, 'make-screenshots.mjs'),
+    join(here, 'pin-run.mjs'),
     join(here, 'screenshot-inputs.mjs'),
   ];
   return [...new Set(files.map((f) => relative(REPO, f).split('\\').join('/')))].sort();

@@ -22,7 +22,7 @@ export { describeWorkload } from './workload-format.js';
 // `M192` U4 — the page gate grades the workload view against these, the same calls the page makes.
 export { formatThresholdActual, formatThresholdTarget } from './threshold-format.js';
 export { renderJunitXml } from './junit.js';
-export { writeLastRun, readLastRun, renderLastRun, describeRunFilter, type LastRun, type LastRunFailure } from './last-run.js';
+export { describeRunFilter } from './run-filter.js';
 export { writeEventsNdjson } from './events-ndjson.js';
 // M130b (D332) — the runnable `.tflw` per authorization finding. An emitter, not an evidence dump:
 // an evidence file can never be wrong, which is what makes it worth less than a file that goes red

@@ -17,6 +17,14 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Removed — `report/.last-run.json` (M265)
+
+- **A run no longer writes `report/.last-run.json`.** `tflw run --failed` has read the kept runs
+  under `report/runs/` since M255, and nothing else read the file. It is gone from the report
+  directory, from each kept run, from the page's Run header and from `tflw run --help`.
+- The docs site's walkthrough pictures of a live run are now cut reproducibly: the shop runs on
+  the port the walkthrough names, and the run's clock is fixed.
+
 ### Changed — flag, diagnostic and keyword descriptions are written for the reader (M264)
 
 - **Every flag effect, diagnostic meaning, generator note and keyword summary is plain user text.**

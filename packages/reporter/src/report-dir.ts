@@ -1,6 +1,6 @@
 // The members of `report/` a run owns and does not always write (`M192b`, closing `M192-03`).
 //
-// `results.json`, `report.html`, `junit.xml` and `.last-run.json` are written by every run, so
+// `results.json`, `report.html` and `junit.xml` are written by every run, so
 // every run overwrites them. The members below are written only when the run has something for
 // them — `findings.sarif` when a security assertion ran (D404), `events.ndjson` under `--format
 // ndjson` (D111.4), `assets/` when a screenshot or trace was kept, the two repro directories when

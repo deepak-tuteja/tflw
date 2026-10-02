@@ -5,13 +5,14 @@
 //            test that ran once and failed printed — while results.json carried `attempts: 2`.
 //   `FU-19`  the per-test back-off warning and the run-level saturation verdict blame opposite
 //            parties and neither mentions the other.
-//   `FU-23`  a `--tag`-filtered run overwrites .last-run.json, silently redefining `--failed`.
+//   `FU-23`  a `--tag`-filtered run overwrote .last-run.json, silently redefining `--failed`. The
+//            record is retired (`M265`); the filter's description outlives it.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { RunReport, TestResult, WorkloadTestResult } from '@tflw/runtime';
 import { renderCliSummary } from '../src/cli-summary.js';
-import { describeRunFilter, renderLastRun } from '../src/last-run.js';
+import { describeRunFilter } from '../src/run-filter.js';
 
 const attempt = (n: number, ok: boolean) => ({ attempt: n, ok, durationMs: 4, steps: [] });
 
@@ -106,7 +107,7 @@ test('a back-off warning on its own is untouched — the ordinary case reads exa
   assert.doesNotMatch(out, /⚠ inconclusive/);
 });
 
-// --- FU-23: the record remembers how it was narrowed -------------------------------------------
+// --- FU-23: a run says how it was narrowed ------------------------------------------------------
 
 test('describeRunFilter renders each filter as the user typed it', () => {
   assert.equal(describeRunFilter({ tags: ['smoke'] }), '--tag smoke');
@@ -117,20 +118,9 @@ test('describeRunFilter renders each filter as the user typed it', () => {
 });
 
 test('an unfiltered run has no filter at all — not an empty string', () => {
-  // The distinction matters to a reader of `.last-run.json`: the `filter` key is written on presence,
-  // so an empty string would make every full run claim to have been narrowed by nothing. (`--failed`
-  // appended a *which was filtered by* clause on it until `D1414`.)
+  // The distinction matters to `--baseline-write`, which lists how a run was narrowed by dropping
+  // `undefined`: an empty string would join in as an empty entry. (It mattered first to
+  // `.last-run.json`'s `filter` key, written on presence, until `M265` retired the file.)
   assert.equal(describeRunFilter({}), undefined);
   assert.equal(describeRunFilter({ tags: [] }), undefined);
-});
-
-test('an unfiltered record is byte-identical to what every earlier version wrote', () => {
-  const report = reportOf([functional({ name: 'broken', ok: false, file: 'b.tflw' })]);
-  assert.deepEqual(renderLastRun(report), { failed: [{ file: 'b.tflw', test: 'broken' }] });
-  assert.ok(!('filter' in renderLastRun(report)));
-});
-
-test('a filtered record carries the filter alongside the failures', () => {
-  const report = reportOf([functional({ name: 'broken', ok: false, file: 'b.tflw' })]);
-  assert.deepEqual(renderLastRun(report, '--tag smoke'), { failed: [{ file: 'b.tflw', test: 'broken' }], filter: '--tag smoke' });
 });

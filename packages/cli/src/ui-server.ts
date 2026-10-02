@@ -1561,7 +1561,7 @@ function reportHeaders(path: string): (body: Buffer) => Record<string, string> {
   return (body) => ({ 'content-security-policy': documentPolicy(body.toString('utf8'), { framedBy: 'none' }) });
 }
 
-const REPORT_MEMBERS = ['results.json', 'report.html', 'junit.xml', 'events.ndjson', 'findings.sarif', '.last-run.json'];
+const REPORT_MEMBERS = ['results.json', 'report.html', 'junit.xml', 'events.ndjson', 'findings.sarif'];
 
 interface LiveRun {
   readonly record: RunRecord;

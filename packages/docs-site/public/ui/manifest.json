@@ -1,5 +1,5 @@
 {
-  "inputs": "d3292d22c8694914202f0502e19998a94418703178d758d26c8c2b1090dfbb7b",
+  "inputs": "27a5efde464bedcc166c9d9b540f9c9821ecf8830ed4e92f6d9b27a69a5264c5",
   "inputCount": 112,
   "shots": [
     {
@@ -115,7 +115,7 @@
     {
       "name": "walk-run-terminal.png",
       "width": 2144,
-      "height": 1596
+      "height": 1542
     },
     {
       "name": "walk-run-paper.png",
@@ -192,5 +192,5 @@
     }
   },
   "deviceScaleFactor": 2,
-  "cutAt": "2026-10-01T20:44:04.015Z"
+  "cutAt": "2026-10-02T17:45:01.720Z"
 }

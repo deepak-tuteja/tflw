@@ -34,6 +34,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
+import { PINNED_START, pinEventStream, pinJsonBody } from './pin-run.mjs';
 import { DEFAULT_VIEWPORT, VIEWS, DOCS_PAGE_DIR, DOOR_FILES, MANIFEST, REPO, SHOTS, THEMES, UI_ROOT, screenshotInputs, screenshotInputsHash, viewOf, viewportFor } from './screenshot-inputs.mjs';
 
 // 1440x900 is the width every appearance gate measures at, so a picture and a gate describe the
@@ -115,13 +116,14 @@ try {
 
   // The server is the CLI's own, from source under tsx — the same one `tflw ui` runs.
   const { UiServer } = await import(join(REPO, 'packages', 'cli', 'src', 'ui-server.ts'));
-  server = new UiServer({
+  const serverOptions = {
     token: TOKEN,
     root,
     cliEntry: join(REPO, 'packages', 'cli', 'src', 'cli.ts'),
     execArgv: ['--import', fileURLToPath(import.meta.resolve('tsx'))],
     staticDir,
-  });
+  };
+  server = new UiServer(serverOptions);
   const port = await server.listen(0);
   const base = `http://127.0.0.1:${port}`;
   await mkdir(DOCS_PAGE_DIR, { recursive: true });
@@ -376,12 +378,41 @@ try {
      reaches the shop on whatever port it was given.
 
      **The report directory is put back after each theme.** ▶ keeps its run under `report/runs/`,
-     and the second theme would otherwise open on the first theme's run: a different order id, two
-     kept runs in the history and a dot on every row the first run touched. */
+     and the second theme would otherwise open on the first theme's run: two kept runs in the
+     history and a dot on every row the first run touched.
+
+     **`M265` — the same cut twice.** The shop listens on 4720, the port chapter 2 gives the reader,
+     and is started fresh for each theme, so both themes see order 1 onward. So is the page's
+     server: one that lived through the first theme lists that theme's run beside the second's. The page's clock is
+     frozen one second after `PINNED_START`, and the run's own clock is pinned on its way to the
+     page (`pin-run.mjs`): every JSON response and the run's event stream pass through `pinRun`.
+     Both themes run the same walk, so their pinned payloads must be identical. A field
+     `pinRun` does not know about would differ between them, and the cut stops naming it, rather
+     than committing a picture that a re-cut cannot reproduce. */
   const shopDir = join(root, 'server.mjs');
   const { startStorefront } = await import(pathToFileURL(shopDir).href);
-  shop = await startStorefront(0);
-  process.env.SHOP_URL = `http://127.0.0.1:${shop.address().port}`;
+  const WALK_PORT = 4720;
+  process.env.SHOP_URL = `http://127.0.0.1:${WALK_PORT}`;
+  const stopShop = () => new Promise((done) => {
+    shop.closeAllConnections?.();
+    shop.close(() => done());
+  });
+  const RUN_CLOCK = new Date(Date.parse(PINNED_START) + 1000);
+  /** Per theme, every pinned payload the page was served, keyed by path with run ids masked. */
+  const served = [];
+  const RUN_ID = /\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d+Z(?:-\d+)?/g;
+  const pinRoutes = async (page, log) => {
+    // Every API call but the two recording streams, which stay open and which the walk never opens.
+    await page.route((url) => url.pathname.startsWith('/api/') && !/^\/api\/(record|pick)\b/.test(url.pathname), async (route) => {
+      const response = await route.fetch();
+      const type = response.headers()['content-type'] ?? '';
+      const text = await response.text();
+      const body = type.startsWith('text/event-stream') ? pinEventStream(text) : type.startsWith('application/json') ? pinJsonBody(text) : text;
+      const key = `${route.request().method()} ${new URL(route.request().url()).pathname.replace(RUN_ID, '<id>')}`;
+      if (body !== text || type.startsWith('application/json')) log.push([key, body.replace(RUN_ID, '<id>')]);
+      await route.fulfill({ response, body });
+    });
+  };
   const reportBefore = join(scratch, 'report-before');
   await cp(join(root, 'report'), reportBefore, { recursive: true });
   const WALK_FILE = 'tests/fulfilment.tflw';
@@ -391,7 +422,14 @@ try {
     throw new Error(`${WALK_FILE}:${WALK_LINE} is no longer \`expect status equals 202\` — chapter 7 narrates that line, so the chapter and these views move together`);
   }
   for (const [theme] of THEMES) {
+    shop = await startStorefront(WALK_PORT);
+    const walkServer = new UiServer(serverOptions);
+    const walkBase = `http://127.0.0.1:${await walkServer.listen(0)}`;
     const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: SCALE });
+    await page.clock.setFixedTime(RUN_CLOCK);
+    const log = [];
+    served.push({ theme, log });
+    await pinRoutes(page, log);
     await page.context().addCookies([{ name: 'tflw-ui-token', value: TOKEN, domain: '127.0.0.1', path: '/' }]);
     await page.addInitScript({ content: 'globalThis.__name = globalThis.__name || ((fn) => fn);' });
     await page.addInitScript(([key, value]) => {
@@ -402,7 +440,7 @@ try {
       }
       document.documentElement.setAttribute('data-tflw-theme', value);
     }, ['tflw.theme', theme]);
-    await page.goto(`${base}/?token=${TOKEN}#/`);
+    await page.goto(`${walkBase}/?token=${TOKEN}#/`);
     await page.reload();
     await page.locator('[data-kind-chips="all"]').waitFor();
     await page.locator(`[data-file="${WALK_FILE}"]`).click();
@@ -446,10 +484,27 @@ try {
     await cut(page, `walk-config-${theme}.png`, '[data-panel="config"]');
 
     await page.close();
+    await walkServer.close();
+    await stopShop();
+    shop = undefined;
     await rm(join(root, 'report'), { recursive: true, force: true });
     await cp(reportBefore, join(root, 'report'), { recursive: true });
     console.log(`  ${theme}: chapter 7 on ${WALK_FILE}:${WALK_LINE} — edited, ran and failed, put back, Config`);
   }
+
+  // `M265` — the two themes ran one walk, so what the page was last served from each endpoint is
+  // the same bytes in both, or a volatile field reached a picture unpinned.
+  const lastServed = ({ log }) => new Map(log.map(([key, body]) => [key, body]));
+  const [first, second] = served.map(lastServed);
+  for (const [key, body] of first) {
+    const other = second.get(key);
+    if (other === undefined || other === body) continue;
+    let at = 0;
+    while (body[at] === other[at]) at++;
+    const near = (text) => JSON.stringify(text.slice(Math.max(0, at - 80), at + 40));
+    throw new Error(`the walk's ${key} differs between ${served[0].theme} and ${served[1].theme} after pinning, at offset ${at}:\n  ${near(body)}\n  ${near(other)}\nso a re-cut would not reproduce these pictures. Teach pin-run.mjs that field.`);
+  }
+  console.log(`  the walk's run data: ${first.size} endpoint(s), identical in both themes after pinning`);
 
   await writeFile(
     MANIFEST,
