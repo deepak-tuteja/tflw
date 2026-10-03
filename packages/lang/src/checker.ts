@@ -210,10 +210,12 @@ export interface ProgramCheckOptions {
    */
   readonly allowPublicTargets?: readonly string[];
   /**
-   * Every name the config's `require env` lines declare (`M156a`, `D775`) — flattened across all
-   * of them, because `resolve.ts` flattens them: `require env` is a top-level directive, not a
-   * `defaults`/`env` entry, so the declaration set is the same under every env and there is no
-   * per-env variant of this option to get wrong.
+   * Every name the config's **top-level** `require env` lines declare (`M156a`, `D775`) — the names
+   * required under every env, and since `M266` (`D1425`) the only ones a test file may read. An
+   * `env` block may declare its own (`D1422`), but a test runs under every env and the language has
+   * no per-env test, so a name only one env requires would make every other env's run die at the
+   * step that reads it. This option is therefore still env-independent, and there is still no
+   * per-env variant of it to get wrong: the editor's `--env` setting cannot change what it says.
    *
    * The ninth field to carry the `undefined`-vs-empty rule, and it sits on the `envBaseUrls` side
    * of it rather than the `envAllowHosts` side. `[]` means *a config was read and it declares
@@ -224,6 +226,12 @@ export interface ProgramCheckOptions {
    * on a file that is perfectly correct.
    */
   readonly requiredEnv?: readonly string[];
+  /**
+   * Each env's own `require env` names, by env (`M266`, `D1425`). Read only to word `TF077`'s hint
+   * when a test reads a name some env does declare — the repair there is different from the one
+   * for a name nobody declares. Never widens what counts as declared.
+   */
+  readonly requiredEnvByEnv?: Readonly<Record<string, readonly string[]>>;
 }
 
 /**
@@ -585,7 +593,7 @@ export const DEMO_SCHEME = 'tflw://';
 
 /** Keys valid only in `defaults`, only in `env`, or in both. */
 const DEFAULTS_ONLY = new Set(['WorkersDecl', 'ReportDecl', 'ViewportDecl']);
-const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
+const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl', 'RequireDecl']);
 
 // ---------------------------------------------------------------------------
 // `TF081` — a config key declared twice in one block (M165a, D829-D832)
@@ -614,7 +622,7 @@ const ENV_ONLY = new Set(['WebDecl', 'ApiServiceDecl']);
  * spelling of each key in this file.
  *
  * The classification is graded against measured behaviour, not against this comment —
- * `config-duplicate-keys.test.ts` doubles every one of the eighteen kinds, resolves it, and asserts
+ * `config-duplicate-keys.test.ts` doubles every one of the nineteen kinds, resolves it, and asserts
  * which value survives.
  */
 type ConfigKeyIdentity = {
@@ -627,6 +635,8 @@ const CONFIG_KEY_IDENTITY: ConfigKeyIdentity = {
   AllowHostsDecl: null,
   AuthorizedTargetDecl: null,
   RedactDecl: null,
+  // `M266` (`D1422`) — a list of names, repeatable like the top-level line it shares a grammar with.
+  RequireDecl: null,
 
   // Sub-keyed, because the resolver writes into a map rather than a variable.
   TimeoutDecl: (entry) => `timeout ${entry.target}`,
@@ -692,7 +702,9 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
   if (config.defaults) {
     for (const entry of config.defaults.entries) {
       if (ENV_ONLY.has(entry.type)) {
-        diags.push(contextError(entry, 'defaults', 'an `env` block'));
+        // `M266` (`D1423`) — `defaults` applies to every env, which is what the top-level line already
+        // says, so the hint names that line first: it is the one a reader writing here meant.
+        diags.push(contextError(entry, 'defaults', entry.type === 'RequireDecl' ? 'the top level of the file, where it is required under every env, or into one `env` block, where it is required only there' : 'an `env` block'));
       }
       checkAuthorizedTargetLiteral(entry, diags);
       checkReservedScheme(entry, diags);
@@ -722,6 +734,25 @@ export function validateConfig(config: ConfigFile): Diagnostic[] {
       checkReservedScheme(entry, diags);
     }
     checkDuplicateKeys(env, `\`env ${env.name}\``, diags);
+  }
+
+  // `M266` (`D1429`) — `TF097`, a name an `env` block requires that the top level already requires
+  // under every env. A warning, not an error: the run is the same either way, and the line is only
+  // misleading — it reads as if this env needed something the others do not.
+  const everyEnv = new Set(topLevelRequiredEnv(config));
+  for (const env of config.envs) {
+    for (const entry of env.entries) {
+      if (entry.type !== 'RequireDecl') continue;
+      for (const name of entry.names.filter((n) => everyEnv.has(n))) {
+        diags.push({
+          code: Codes.REQUIRE_ENV_ALREADY_EVERY_ENV,
+          severity: 'warning',
+          message: `\`${name}\` is already required under every env`,
+          span: entry.span,
+          hint: `a top-level \`require env\` line declares it, so this line in \`env ${env.name}\` adds nothing — remove \`${name}\` from it`,
+        });
+      }
+    }
   }
 
   if (defaultCount > 1) {
@@ -3546,6 +3577,8 @@ function keyName(entry: ConfigEntry): string {
       return 'log destination';
     case 'LogLevelDecl':
       return 'log level';
+    case 'RequireDecl':
+      return 'require env';
   }
 }
 
@@ -5752,7 +5785,8 @@ function describeCrawlOffender(step: Step): string {
 // ---------------------------------------------------------------------------
 
 /**
- * `TF077` — every `env(NAME)` in a test file, checked against the config's `require env` names.
+ * `TF077` — every `env(NAME)` in a test file, checked against the config's top-level `require env`
+ * names (`D1425`: a test runs under every env, so only a name every env requires is declared for it).
  *
  * **Skipped entirely without `opts.requiredEnv`**, per that option's own rule: a caller who
  * resolved no config has not said this suite declares nothing. The LSP and the docs-site editor
@@ -5769,7 +5803,14 @@ function describeCrawlOffender(step: Step): string {
  */
 export function checkDeclaredEnvRefs(program: Program, opts: ProgramCheckOptions = {}): Diagnostic[] {
   if (!opts.requiredEnv) return [];
-  return undeclaredEnvRefs(program, opts.requiredEnv);
+  const byEnv = opts.requiredEnvByEnv ?? {};
+  const diags: Diagnostic[] = [];
+  const declared = new Set(opts.requiredEnv);
+  eachNodeOfType<EnvRef>(program, 'EnvRef', (ref) => {
+    if (declared.has(ref.name)) return;
+    diags.push(undeclaredEnvRef(ref, declared, envsDeclaring(byEnv, ref.name), 'test'));
+  });
+  return diags;
 }
 
 /**
@@ -5780,33 +5821,101 @@ export function checkDeclaredEnvRefs(program: Program, opts: ProgramCheckOptions
  * either dialect, and the sibling's own `require env` plant is a config. A rule that only saw test
  * files would miss the case it was built from.
  *
- * Separate entry point rather than a wider `checkDeclaredEnvRefs` for `collectConfigFileReferences`'
- * reason: the two dialects are two trees with no common root, and the caller resolves them against
- * different directories and reports them against different files. Only the walk is shared.
+ * **What declares a reference depends on where it is written, never on `--env`** (`M266`, `D1424`).
+ * The declarations are read off the config itself, so this needs nothing resolved:
+ *
+ *  - inside an `env` block — the top level, or that block's own `require env` lines;
+ *  - inside a session or signer scoped `for env a, b` — the top level, or a line in **every** env of
+ *    its scope, since the session runs under each of them;
+ *  - anywhere else (`defaults`, an unscoped session or signer) — the top level only, since it applies
+ *    under every env.
+ *
+ * Placement is decided by span containment rather than by walking each block separately, so a
+ * directive added later that can hold an `env(NAME)` is checked against the top level by default —
+ * the strict answer — instead of being skipped by a walk that did not know it existed.
  */
-export function checkConfigDeclaredEnvRefs(config: ConfigFile, requiredEnv: readonly string[]): Diagnostic[] {
-  return undeclaredEnvRefs(config, requiredEnv);
-}
-
-function undeclaredEnvRefs(root: unknown, requiredEnv: readonly string[]): Diagnostic[] {
-  const declared = new Set(requiredEnv);
+export function checkConfigDeclaredEnvRefs(config: ConfigFile): Diagnostic[] {
+  const top = topLevelRequiredEnv(config);
+  const byEnv = requiredEnvByEnv(config);
+  const scopes: { span: Span; declared: Set<string>; where: EnvRefScope }[] = [];
+  for (const env of config.envs) {
+    scopes.push({ span: env.span, declared: new Set([...top, ...(byEnv[env.name] ?? [])]), where: { kind: 'env', env: env.name } });
+  }
+  for (const scoped of [...config.sessions, ...(config.signers ?? [])]) {
+    if (!scoped.envs || scoped.envs.length === 0) continue;
+    const names = scoped.envs.map((e) => e.name);
+    const inEvery = (byEnv[names[0]!] ?? []).filter((n) => names.every((e) => (byEnv[e] ?? []).includes(n)));
+    scopes.push({ span: scoped.span, declared: new Set([...top, ...inEvery]), where: { kind: 'scoped', envs: names } });
+  }
+  const everyEnv = new Set(top);
   const diags: Diagnostic[] = [];
-  eachNodeOfType<EnvRef>(root, 'EnvRef', (ref) => {
+  eachNodeOfType<EnvRef>(config, 'EnvRef', (ref) => {
+    const scope = scopes.find((sc) => spanContains(sc.span, ref.span));
+    const declared = scope?.declared ?? everyEnv;
     if (declared.has(ref.name)) return;
-    const near = suggest(ref.name, [...declared]);
-    diags.push({
-      code: Codes.UNDECLARED_ENV_REF,
-      severity: 'error',
-      message: `\`${ref.name}\` is read here but no \`require env\` line declares it`,
-      span: ref.span,
-      hint: near
-        ? `did you mean \`${near}\`?`
-        : declared.size
-          ? `add it to a \`require env\` line in \`tflw.config\`, which today declares: ${[...declared].join(', ')}. Without the declaration the run does not check for it up front — it dies at this step, mid-suite, on whichever iteration reaches it first`
-          : 'this config has no `require env` line, so nothing checks these variables before the run starts and a missing one surfaces as a failure at this step. Add `require env ' + ref.name + '` at the top level of `tflw.config`',
-    });
+    diags.push(undeclaredEnvRef(ref, declared, envsDeclaring(byEnv, ref.name), scope?.where ?? 'every-env'));
   });
   return diags;
+}
+
+/** The names a config requires under every env — its top-level `require env` lines, in written order. */
+export function topLevelRequiredEnv(config: ConfigFile): string[] {
+  return config.requires.flatMap((r) => r.names);
+}
+
+/** Each env's own `require env` names (`M266`, `D1422`), keyed by env name; an env with none is absent. */
+export function requiredEnvByEnv(config: ConfigFile): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const env of config.envs) {
+    const names = env.entries.flatMap((e) => (e.type === 'RequireDecl' ? e.names : []));
+    if (names.length > 0) out[env.name] = [...(out[env.name] ?? []), ...names];
+  }
+  return out;
+}
+
+/** Where an `env(NAME)` sits, as far as `TF077`'s hint needs to know. */
+type EnvRefScope = 'test' | 'every-env' | { kind: 'env'; env: string } | { kind: 'scoped'; envs: string[] };
+
+function envsDeclaring(byEnv: Readonly<Record<string, readonly string[]>>, name: string): string[] {
+  return Object.keys(byEnv).filter((env) => byEnv[env]!.includes(name));
+}
+
+function spanContains(outer: Span, inner: Span): boolean {
+  return outer.start.offset <= inner.start.offset && inner.end.offset <= outer.end.offset;
+}
+
+const quoteEnvs = (envs: readonly string[]): string => envs.map((e) => `\`env ${e}\``).join(', ');
+
+function undeclaredEnvRef(ref: EnvRef, declared: Set<string>, declaringEnvs: string[], where: EnvRefScope): Diagnostic {
+  const near = suggest(ref.name, [...declared]);
+  const base = { code: Codes.UNDECLARED_ENV_REF, severity: 'error' as const, span: ref.span };
+  // `M266` (`D1424`/`D1425`) — some env does require it, just not every env this line runs under.
+  // The repair is a placement, not a declaration, so the message says which envs and the hint says
+  // where the read or the declaration has to move.
+  if (declaringEnvs.length > 0 && !near) {
+    const only = `only ${quoteEnvs(declaringEnvs)} ${declaringEnvs.length > 1 ? 'require' : 'requires'} it`;
+    let hint: string;
+    if (where === 'test') {
+      hint = `a test runs under every env, so under any other it would die at this step, mid-suite. Declare it at the top level of \`tflw.config\`, or read it in ${declaringEnvs.length > 1 ? 'one of those blocks' : 'that block'} or in a session scoped to it with \`for env ${declaringEnvs[0]}\``;
+    } else if (where === 'every-env') {
+      hint = `this line applies under every env, so under any other it is read with nothing having checked it is set. Declare it at the top level of \`tflw.config\`, or scope the session or signer that reads it with \`for env ${declaringEnvs.join(', ')}\``;
+    } else if (where.kind === 'env') {
+      hint = `this line is in \`env ${where.env}\`. Add \`require env ${ref.name}\` to that block, or declare it at the top level for every env`;
+    } else {
+      const missing = where.envs.filter((e) => !declaringEnvs.includes(e));
+      hint = `this is scoped to ${quoteEnvs(where.envs)}, and ${quoteEnvs(missing)} ${missing.length > 1 ? 'do' : 'does'} not require it. Add \`require env ${ref.name}\` to ${missing.length > 1 ? 'each of those blocks' : 'that block'}, or declare it at the top level for every env`;
+    }
+    return { ...base, message: `\`${ref.name}\` is read here, but ${only}`, hint };
+  }
+  return {
+    ...base,
+    message: `\`${ref.name}\` is read here but no \`require env\` line declares it`,
+    hint: near
+      ? `did you mean \`${near}\`?`
+      : declared.size
+        ? `add it to a \`require env\` line in \`tflw.config\`, which today declares: ${[...declared].join(', ')}. Without the declaration the run does not check for it up front — it dies at this step, mid-suite, on whichever iteration reaches it first`
+        : 'this config has no `require env` line, so nothing checks these variables before the run starts and a missing one surfaces as a failure at this step. Add `require env ' + ref.name + '` at the top level of `tflw.config`',
+  };
 }
 
 /**

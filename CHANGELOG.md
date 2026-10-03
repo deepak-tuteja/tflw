@@ -17,6 +17,23 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Added — an `env` block may require its own secrets (M266)
+
+- **`require env NAME` inside an `env` block** requires the name only when that env runs. A secret
+  only staging sends no longer has to be set — or faked in `.env` — for a local run. The top-level
+  line keeps its meaning: required under every env. Not allowed in `defaults` (`TF025`).
+- **`TF077` asks whether a name is declared for where it is read.** An `env` block reads the top level
+  and its own lines; a session or signer scoped `for env` reads names every env in its scope declares;
+  everything else, test files included, reads the top level only, since a test runs under every env.
+  When some env does declare the name, the message says which and the hint names the move.
+- **`TF097`**, a warning: an `env` block requiring a name the top level already requires.
+- **The startup refusal names the env** for a name only it requires —
+  `SHOP_TOKEN (required by env staging)` — and `tflw check`'s *not set here* note counts what the
+  selected env requires.
+- **Every declared secret is masked**, whichever env declares it, not only the selected env's.
+- **`tflw doctor` lists the env's required secrets** by name and whether each is set, reads the
+  project's `.env` as `run` does, and exits 1 when one is not set.
+
 ### Removed — `report/.last-run.json` (M265)
 
 - **A run no longer writes `report/.last-run.json`.** `tflw run --failed` has read the kept runs

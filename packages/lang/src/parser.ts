@@ -592,7 +592,7 @@ function negatedStateWord(word: string): string | undefined {
 const METHODS = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'] as const;
 /** Exported since `M137a` (D444) so config completion offers *this* list rather than a fourth copy
  * of it. `B5-09` is what a fourth copy becomes, and this milestone is repairing the third instance. */
-export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'teardown', 'redact', 'viewport', 'log', 'baseline'] as const;
+export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'api', 'insecure', 'cert', 'key', 'allow', 'authorized', 'evidence', 'teardown', 'redact', 'viewport', 'log', 'baseline', 'require'] as const;
 /** Which block a config key belongs in — the parser's view of the rule the checker enforces as
  * `TF025` (checker.ts `DEFAULTS_ONLY`/`ENV_ONLY`, keyed there on AST node type rather than on the
  * word). The parser needs it only to keep a *suggestion* from naming a key the checker will then
@@ -600,7 +600,9 @@ export const CONFIG_KEYS = ['header', 'timeout', 'workers', 'report', 'web', 'ap
  * `teaching.test.ts`'s round-trip guard walks every key in both blocks and fails if what a hint
  * claims about placement is not what the checker then does. */
 const DEFAULTS_ONLY_KEYS: readonly string[] = ['workers', 'report', 'viewport'];
-const ENV_ONLY_KEYS: readonly string[] = ['web', 'api'];
+// `require` (`M266`, `D1422`/`D1423`) is env-only *as a key*: it is also a top-level directive, which is
+// where a name every env needs is declared, so `defaults` would be a second spelling of that line.
+const ENV_ONLY_KEYS: readonly string[] = ['web', 'api', 'require'];
 export type ConfigBlockKind = 'defaults' | 'env';
 /** Exported alongside `CONFIG_KEYS` (`M137a`, D444) so completion filters by the same predicate the
  * did-you-mean hint uses. `A2-07b` is the row that made this rule load-bearing: a tool that offers
@@ -611,6 +613,7 @@ export function configKeyAllowedIn(key: string, block: ConfigBlockKind): boolean
 }
 /** Where a key that is barred from the current block does belong, phrased to drop into a hint. */
 function configKeyHome(key: string): string {
+  if (key === 'require') return 'an `env` block (or the top level of the file, for every env)';
   return ENV_ONLY_KEYS.includes(key) ? 'an `env` block' : 'the `defaults` block';
 }
 /** The `probe …` sub-clauses an `authorized target` accepts (M130b, D330; M134a, D372), and the
@@ -2363,6 +2366,9 @@ class Parser {
         return this.wrap(this.parseViewportDecl());
       case 'baseline':
         return this.wrap(this.parseBaselineDecl());
+      // `M266` (`D1422`) — the top-level directive's own production: one grammar, two positions.
+      case 'require':
+        return this.wrap(this.parseRequire());
       default: {
         // Suggest with the block in mind (M84, C11/`A2-07b`). The nearest key by edit distance is
         // still the right guess at what was *meant* — but half a dozen of the fourteen are legal in

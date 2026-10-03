@@ -170,14 +170,17 @@ export class DocumentStore {
     // depends entirely on a config nobody found. Left `undefined`, and the pass then reports the
     // portability warning only, which is true regardless of any config.
     let envAllowHosts: { envName: string; hosts: readonly string[] } | undefined;
-    // `requiredEnv` (M156a/D775, `TF077`) is the fourth, and the one with no `envName` in it —
-    // `require env` is a top-level directive, so the declaration set is the same under every env
-    // and there is nothing here for the editor's `--env` setting to change. It is threaded for the
+    // `requiredEnv` (M156a/D775, `TF077`) is the fourth, and the one with no `envName` in it — a
+    // test file is checked against the config's top-level `require env` lines only (`M266`,
+    // `D1425`: a test runs under every env), so the declaration set is the same under every env and
+    // there is nothing here for the editor's `--env` setting to change. The per-env sets ride along
+    // only to word the hint. It is threaded for the
     // reason M60 exists: the editor and the CLI check with one composed pass list, and an option
     // the CLI passes and the server does not is exactly the silent disagreement that list was
     // built to prevent. `undefined` on a pathless scratch buffer, where no project resolves and
     // every `env(` in the file would otherwise be squiggled red on code that is correct.
     let requiredEnv: readonly string[] | undefined;
+    let requiredEnvByEnv: Readonly<Record<string, readonly string[]>> | undefined;
     // `M247-04` (`G7`): the env this buffer is checked under — the CLI passes it, so the editor must.
     let activeEnv: string | undefined;
     let helpers: HelperPolicy | undefined;
@@ -197,7 +200,8 @@ export class DocumentStore {
         };
         envTimeouts = { envName: project.resolved.envName, wait: project.resolved.timeouts.wait };
         envAllowHosts = { envName: project.resolved.envName, hosts: project.resolved.allowHosts ?? [] };
-        requiredEnv = project.resolved.requiredEnv;
+        requiredEnv = project.resolved.requiredEnvEveryEnv;
+        requiredEnvByEnv = project.resolved.requiredEnvByEnv;
         // `TF083` (`M239` `D`, `D1319`) — the same policy `tflw check` applies, against the same
         // file path relative to the config the CLI would read. A pathless buffer has no location
         // to judge a `use` from, so it gets no policy (`undefined`, world unknown), not an empty one.
@@ -261,6 +265,7 @@ export class DocumentStore {
         ...(envTimeouts ? { envTimeouts } : {}),
         ...(envAllowHosts ? { envAllowHosts } : {}),
         ...(requiredEnv ? { requiredEnv } : {}),
+        ...(requiredEnvByEnv ? { requiredEnvByEnv } : {}),
         ...(helpers ? { helpers } : {}),
       }),
     ];

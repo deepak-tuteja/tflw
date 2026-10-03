@@ -55,12 +55,15 @@ test('a `defaults` block offers the keys legal in `defaults`, and not the two th
   // checker then refuses with `TF025`.
   assert.ok(!labels.includes('web'), '`web` is env-only');
   assert.ok(!labels.includes('api'), '`api` is env-only');
+  // `M266` (`D1423`) — `require env` in `defaults` is the top-level line with a second spelling.
+  assert.ok(!labels.includes('require'), '`require` is env-only as a key');
 });
 
 test('an `env` block offers the keys legal in `env`, and not the three that are not', () => {
   const labels = completeAt('env local default\n  ').map((c) => c.label);
   assert.ok(labels.includes('web'));
   assert.ok(labels.includes('api'));
+  assert.ok(labels.includes('require'), '`M266`: an env block may require its own secrets');
   assert.ok(!labels.includes('workers'), '`workers` is defaults-only');
   assert.ok(!labels.includes('report'), '`report` is defaults-only');
   assert.ok(!labels.includes('viewport'), '`viewport` is defaults-only');

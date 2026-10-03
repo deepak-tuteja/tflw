@@ -101,9 +101,12 @@ test('the config dialect is checked too — the position the rule was built from
   const cfg = 'env local default\n  api "http://localhost:4001"\n\nsession admin\n  api POST /auth/login body { email: env(ADMIN_EMAIL), password: env(ADMIN_PW) }\n  capture body.token as token\n';
   const parsed = parseConfigSource(cfg);
   assert.deepEqual(parsed.diagnostics.map((d) => d.code), [], 'fixture is otherwise clean');
-  const diags = checkConfigDeclaredEnvRefs(parsed.config, []);
+  const diags = checkConfigDeclaredEnvRefs(parsed.config);
   assert.deepEqual(diags.map((d) => d.code), [Codes.UNDECLARED_ENV_REF, Codes.UNDECLARED_ENV_REF]);
-  assert.deepEqual(checkConfigDeclaredEnvRefs(parsed.config, ['ADMIN_EMAIL', 'ADMIN_PW']).map((d) => d.code), []);
+  // Since `M266` the declarations are read off the config itself, so the declared case is the same
+  // file with the line added.
+  const declared = parseConfigSource(`require env ADMIN_EMAIL, ADMIN_PW\n${cfg}`);
+  assert.deepEqual(checkConfigDeclaredEnvRefs(declared.config).map((d) => d.code), []);
 });
 
 // ---------------------------------------------------------------------------
@@ -126,7 +129,7 @@ test('`TF077` cannot see it, which is the whole reason `TF078` exists', () => {
   // walks straight past it. A rule that missed the commonest spelling of the mistake it exists to
   // catch would be `D722` wearing a diagnostic code.
   const parsed = parseConfigSource('defaults\n  header "X-Token" is "{env(P_TOKEN)}"\n');
-  assert.deepEqual(checkConfigDeclaredEnvRefs(parsed.config, []).map((d) => d.code), []);
+  assert.deepEqual(checkConfigDeclaredEnvRefs(parsed.config).map((d) => d.code), []);
 });
 
 test('a real `{variable}` interpolation is untouched — the false positive that would matter', () => {

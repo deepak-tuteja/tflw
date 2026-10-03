@@ -5,8 +5,8 @@ that was not enough, or when the symptom is not a message at all. A diagnostic c
 recognise — `TF036`, `TF083` — is in [the diagnostics reference](/reference/diagnostics), one row
 per code with what it means and an example.
 
-Start with `npx tflw doctor`: it reports the config, env, services, proxy, TLS, suite and browsers a
-run would use, and exits 1 with the fix for the three things that stop every run.
+Start with `npx tflw doctor`: it reports the config, env, services, proxy, TLS, secrets, suite and
+browsers a run would use, and exits 1 with the fix for the four things that stop a run.
 
 <Published :when="false">
 
@@ -37,8 +37,9 @@ host (or a `*.domain` pattern) to `allow hosts` in `defaults` or the env; `tflw 
 env whose own base URL is missing from its list as `TF036`.
 
 **A required variable is missing.** `require env A, B` refuses the run and names every variable not
-set. Set them in the shell, or in `.env` at the project root for local work — a real environment
-variable wins over `.env`.
+set; one that only the selected env requires says so, as `B (required by env staging)`. Set them in
+the shell, or in `.env` at the project root for local work — a real environment variable wins over
+`.env`. `tflw doctor --env <name>` lists what an env requires and which are set.
 
 ## A run
 

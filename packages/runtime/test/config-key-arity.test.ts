@@ -1,6 +1,6 @@
 // `M165a`/`D830` — **the exemption list behind `TF081`, graded against what `resolveConfig` does.**
 //
-// `TF081` says a second declaration of a key discards the first. Four keys are exempt because they
+// `TF081` says a second declaration of a key discards the first. Five keys are exempt because they
 // accumulate instead, and getting that set wrong is the whole risk of the rule: a key wrongly called
 // single-valued makes `tflw check` refuse a legitimate config, and one wrongly called accumulating
 // leaves the silence the code exists to remove.
@@ -12,7 +12,7 @@
 // cases is a cache, and nothing in this repository invalidated it.
 //
 // **So nothing here is written down twice.** There is no expected-arity column. For each of the
-// eighteen members of `ConfigEntry`, this doubles the key in one block, resolves it, and resolves a
+// nineteen members of `ConfigEntry`, this doubles the key in one block, resolves it, and resolves a
 // second config carrying only the *later* of the two lines. If the two resolve identically the first
 // declaration was discarded — that is the measurement, not a claim about it — and the test then
 // asserts `validateConfig` reports `TF081` for exactly the keys where that happened. The checker's
@@ -59,6 +59,8 @@ const DOUBLINGS: Record<ConfigEntry['type'], Doubling> = {
     second: 'authorized target "https://second.example" reason "self-hosted fixture"',
   },
   RedactDecl: { block: 'env', first: 'redact header "X-First"', second: 'redact header "X-Second"' },
+  // `M266` (`D1422`) — a list of names, repeatable in a block as it is at the top level.
+  RequireDecl: { block: 'env', first: 'require env FIRST_NAME', second: 'require env SECOND_NAME' },
 };
 
 const configSource = (d: Doubling, lines: readonly string[]): string => {
@@ -107,18 +109,18 @@ for (const [kind, doubling] of Object.entries(DOUBLINGS) as [ConfigEntry['type']
   });
 }
 
-// The negative control the eighteen cannot give: every one of them asserts an *agreement* between
+// The negative control the nineteen cannot give: every one of them asserts an *agreement* between
 // two things, and a check that never fires agrees with a resolver that never discards. This pins
 // that both outcomes are actually reachable in the table above — without it, a `TF081` deleted
-// outright would leave four passing cases and fourteen red ones, but a `TF081` that fired on
-// nothing at all in a table of four accumulating keys would be indistinguishable from correct.
+// outright would leave five passing cases and fourteen red ones, but a `TF081` that fired on
+// nothing at all in a table of five accumulating keys would be indistinguishable from correct.
 test('the table exercises both verdicts, so neither outcome is vacuous', () => {
   const verdicts = Object.values(DOUBLINGS).map((d) => {
     const doubled = configSource(d, [d.first, d.second]);
     return validateConfig(parse(doubled)).some((x) => x.code === Codes.CONFIG_DUPLICATE_KEY);
   });
   assert.equal(verdicts.filter(Boolean).length, 14, 'expected fourteen single-valued keys');
-  assert.equal(verdicts.filter((v) => !v).length, 4, 'expected four accumulating keys');
+  assert.equal(verdicts.filter((v) => !v).length, 5, 'expected five accumulating keys');
 });
 
 // `D832` from the resolver's side. The rule is per block because a `defaults` value overridden in an

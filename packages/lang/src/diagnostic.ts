@@ -397,9 +397,9 @@ export const Codes = {
   // deliberately not asked here; it is `D779`'s advisory note, which names and does not fail.
   //
   // **`TF057` looks like the counter-example and is not.** It warns because its check is scoped to
-  // one env and another env may declare the allowlist. `require env` is a top-level directive, not
-  // a `defaults`/`env` entry (SPEC §3.4), flattened env-independently by `resolve.ts` — the
-  // declaration set is identical under every env, so that escape does not exist here.
+  // one env and another env may declare the allowlist. Since `M266` (`D1424`) an `env` block may
+  // declare its own `require env` names too, and what declares a reference depends on where it is
+  // written — never on `--env` — so the answer is still the same under every env (SPEC §3.4).
   //
   // **The honest cost, recorded rather than argued away:** the other members of the error family
   // refuse a suite that *cannot* run, while this one refuses a suite that *can* — an undeclared
@@ -624,6 +624,12 @@ export const Codes = {
    * locator, `page`, a dialog or a network observation has nothing left to read.
    */
   ROWS_SUBJECT_UNREADABLE: 'TF096',
+  /**
+   * `TF097` — **an `env` block's `require env` naming a variable the top level already requires**
+   * (`M266`, `D1429`). The top-level line requires it under every env, so the block's line changes
+   * nothing and reads as if this env alone needed it. A warning.
+   */
+  REQUIRE_ENV_ALREADY_EVERY_ENV: 'TF097',
 } as const;
 
 // ---------------------------------------------------------------------------

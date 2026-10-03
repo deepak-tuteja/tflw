@@ -68,7 +68,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
     // config requires, and reporting every `env()` in every other row's probe would be the harness
     // being wrong rather than the row. `TF078` needs nothing and is wired unconditionally, exactly
     // as it is in the CLI.
-    const envRefs = probe.needs?.requiredEnv ? checkConfigDeclaredEnvRefs(parsed.config, probe.needs.requiredEnv) : [];
+    const envRefs = probe.needs?.requiredEnv ? checkConfigDeclaredEnvRefs(parsed.config) : [];
     return [...parsed.diagnostics, ...allowHosts, ...envRefs, ...checkConfigBracedEnvRefs(parsed.config), ...checkCodeFlowSessions(parsed.config)];
   }
   const source =

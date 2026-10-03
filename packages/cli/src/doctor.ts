@@ -5,9 +5,11 @@
 // no request anywhere. A doctor that probed the services would be a test run with a different exit
 // code, and would be wrong exactly when the network is the problem.
 //
-// **Three things fail it (exit 1), and only three**, because each makes every `tflw run` here fail
-// before a test can: no `tflw.config`, a Node older than 22, and browser steps in the suite with no
-// browser installed. Everything else is reported and left to the reader — a proxy variable nobody
+// **Four things fail it (exit 1), and only four**, because each makes every `tflw run` here fail
+// before a test can: no `tflw.config`, a Node older than 22, browser steps in the suite with no
+// browser installed, and (`M266`, `D1430`) a `require env` name this env requires that is not set —
+// `run` refuses before its first request, so a doctor printing *nothing here stops a run* over it
+// would be wrong. Everything else is reported and left to the reader — a proxy variable nobody
 // reads, a client certificate not on disk yet (a `before all` may write it, `TF043`), an env the
 // suite never uses. Those are facts, not verdicts.
 
@@ -15,7 +17,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { join, relative, resolve, sep } from 'node:path';
 import { lensesOfTest, parseConfigSource, parseSource } from '@tflw/lang';
-import { resolveConfig, selectEnv, SUPPORTED_BROWSER_ENGINES, type BrowserEngine } from '@tflw/runtime';
+import { missingRequiredEnv, requiredBy, resolveConfig, selectEnv, SUPPORTED_BROWSER_ENGINES, type BrowserEngine } from '@tflw/runtime';
 import { discoverTests } from './project.js';
 
 export const MIN_NODE_MAJOR = 22;
@@ -33,6 +35,9 @@ export interface DoctorReport {
   readonly tls: { readonly insecure: boolean; readonly clientCert: { readonly cert: string; readonly key: string; readonly onDisk: boolean } | null; readonly line: string };
   readonly suite: { readonly files: number; readonly tests: number; readonly browserTests: number; readonly unparsed: number };
   readonly browsers: { readonly playwright: string | null; readonly installed: readonly BrowserEngine[]; readonly line: string };
+  /** `M266` (`D1430`) — the names this env requires before a run, by name and whether each is set.
+   *  `env` is the env block that requires it, or `null` for a top-level line (every env). Never a value. */
+  readonly secrets: { readonly required: readonly { readonly name: string; readonly env: string | null; readonly set: boolean }[]; readonly line: string };
   /** The reasons for exit 1, each a sentence with its remedy. */
   readonly problems: readonly string[];
 }
@@ -58,8 +63,14 @@ function playwrightState(cwd: string): { version: string | null; installed: Brow
   }
 }
 
-export async function diagnose(cwd: string, opts: { readonly env?: string; readonly version: string; readonly nodeVersion?: string; readonly environ?: NodeJS.ProcessEnv }): Promise<DoctorReport> {
+export async function diagnose(
+  cwd: string,
+  opts: { readonly env?: string; readonly version: string; readonly nodeVersion?: string; readonly environ?: NodeJS.ProcessEnv; readonly runEnviron?: NodeJS.ProcessEnv },
+): Promise<DoctorReport> {
   const environ = opts.environ ?? process.env;
+  // `M266` — what `run` resolves against: the shell with the project's `.env` under it. The proxy
+  // line keeps reading `environ`, because Node's fetch reads the process's own variables, not `.env`.
+  const runEnviron = opts.runEnviron ?? environ;
   const nodeVersion = opts.nodeVersion ?? process.version;
   const supported = Number(/^v?(\d+)/.exec(nodeVersion)?.[1] ?? 0) >= MIN_NODE_MAJOR;
   const problems: string[] = [];
@@ -86,6 +97,7 @@ export async function diagnose(cwd: string, opts: { readonly env?: string; reado
       tls: { insecure: false, clientCert: null, line: 'no config to read' },
       suite: { files: 0, tests: 0, browserTests: 0, unparsed: 0 },
       browsers: { playwright: playwright.version, installed: playwright.installed, line: browsersLine(playwright, 0) },
+      secrets: { required: [], line: 'no config to read' },
       problems,
     };
   };
@@ -95,7 +107,7 @@ export async function diagnose(cwd: string, opts: { readonly env?: string; reado
   if (errors.length > 0) return blank(`tflw.config does not parse (${errors[0]!.code}: ${errors[0]!.message}) — \`tflw check\` shows every problem`);
   let resolved;
   try {
-    resolved = resolveConfig(parsed.config, selectEnv(parsed.config, { flag: opts.env, envVar: environ.TFLW_ENV }), environ);
+    resolved = resolveConfig(parsed.config, selectEnv(parsed.config, { flag: opts.env, envVar: runEnviron.TFLW_ENV }), runEnviron);
   } catch (e) {
     return blank(`tflw.config does not resolve: ${(e as Error).message}`);
   }
@@ -120,6 +132,18 @@ export async function diagnose(cwd: string, opts: { readonly env?: string; reado
     );
   }
 
+  const notSet = missingRequiredEnv(resolved, runEnviron);
+  const required = resolved.requiredEnv.map((name) => ({ name, env: requiredBy(resolved, name) === '' ? null : resolved.envName, set: !notSet.includes(name) }));
+  if (notSet.length > 0) {
+    problems.push(
+      `${notSet.map((n) => `${n}${requiredBy(resolved, n)}`).join(', ')} ${notSet.length === 1 ? 'is' : 'are'} required by \`require env\` and not set — \`tflw run\` refuses before its first request; set ${notSet.length === 1 ? 'it' : 'them'} in your environment or a local .env file`,
+    );
+  }
+  const secretsLine =
+    required.length === 0
+      ? 'none required'
+      : `${required.map((r) => `${r.name}${r.env ? ` (env ${r.env} only)` : ''}`).join(', ')} — ${notSet.length === 0 ? 'all set' : `not set: ${notSet.join(', ')}`}`;
+
   const mtls = resolved.mtls;
   const rel = (p: string): string => relative(cwd, resolve(cwd, p)).split(sep).join('/');
   const clientCert = mtls ? { cert: rel(mtls.certPath), key: rel(mtls.keyPath), onDisk: existsSync(resolve(cwd, mtls.certPath)) && existsSync(resolve(cwd, mtls.keyPath)) } : null;
@@ -139,6 +163,7 @@ export async function diagnose(cwd: string, opts: { readonly env?: string; reado
     tls: { insecure: resolved.insecure, clientCert, line: tlsLine },
     suite: { files: files.length, tests, browserTests, unparsed },
     browsers: { playwright: playwright.version, installed: playwright.installed, line: browsersLine(playwright, browserTests) },
+    secrets: { required, line: secretsLine },
     problems,
   };
 }
@@ -158,6 +183,7 @@ export function renderDoctor(r: DoctorReport): string {
     ...(r.web ? [`web       ${r.web}`] : []),
     `proxy     ${r.proxy.line}`,
     `tls       ${r.tls.line}`,
+    `secrets   ${r.secrets.line}`,
     `suite     ${r.suite.files} file${r.suite.files === 1 ? '' : 's'}, ${r.suite.tests} test${r.suite.tests === 1 ? '' : 's'}${r.suite.browserTests > 0 ? `, ${r.suite.browserTests} in a browser` : ''}${r.suite.unparsed > 0 ? ` — ${r.suite.unparsed} file${r.suite.unparsed === 1 ? ' does' : 's do'} not parse (\`tflw check\`)` : ''}`,
     `browsers  ${r.browsers.line}`,
   ];

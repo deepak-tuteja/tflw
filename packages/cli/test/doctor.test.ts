@@ -1,5 +1,5 @@
 // `M249` `D` (`D1370`) — `tflw doctor`: what a project will run with, read offline, failing only for
-// the three things that stop every run.
+// the things that stop every run (three until `M266` added an unset required secret).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
@@ -77,5 +77,52 @@ test('the three that fail it: no config, an old Node, and browser tests with no 
   } finally {
     await rm(empty, { recursive: true, force: true });
     await rm(browser, { recursive: true, force: true });
+  }
+});
+
+// `M266` (`D1430`) — the env's required secrets, by name, set or not, never a value. A required name
+// that is not set is the fourth thing that fails doctor, since `run` refuses before its first request.
+const PER_ENV = [
+  'require env EVERY_TOKEN',
+  'env local default',
+  '  api "http://localhost:4001/v1"',
+  '',
+  'env staging',
+  '  api "https://staging.example.com"',
+  '  require env STG_TOKEN',
+  '',
+].join('\n');
+
+test('secrets: the env\'s own names are marked, an unset one fails doctor, and no value is printed', async () => {
+  const dir = await project({ 'tflw.config': PER_ENV });
+  try {
+    const staging = await diagnose(dir, { env: 'staging', version: '9.9.9', nodeVersion: 'v22.11.0', environ: {}, runEnviron: { EVERY_TOKEN: 'e-v4lue' } });
+    assert.equal(staging.ok, false);
+    assert.deepEqual(staging.secrets.required, [
+      { name: 'EVERY_TOKEN', env: null, set: true },
+      { name: 'STG_TOKEN', env: 'staging', set: false },
+    ]);
+    assert.equal(staging.secrets.line, 'EVERY_TOKEN, STG_TOKEN (env staging only) — not set: STG_TOKEN');
+    assert.ok(staging.problems.some((p) => /^STG_TOKEN \(required by env staging\) is required by `require env` and not set/.test(p)), staging.problems.join('; '));
+    assert.match(renderDoctor(staging), /^secrets {3}EVERY_TOKEN, STG_TOKEN/m);
+    assert.doesNotMatch(renderDoctor(staging), /e-v4lue/, 'a value never reaches the output');
+
+    // Control: `local` does not require the staging secret, so the same shell passes.
+    const local = await diagnose(dir, { version: '9.9.9', nodeVersion: 'v22.11.0', environ: {}, runEnviron: { EVERY_TOKEN: 'e-v4lue' } });
+    assert.equal(local.ok, true, local.problems.join('; '));
+    assert.equal(local.secrets.line, 'EVERY_TOKEN — all set');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('secrets: a config with no `require env` says so, and the shell alone is read when no `.env` is passed', async () => {
+  const dir = await project({ 'tflw.config': CONFIG });
+  try {
+    const r = await diagnose(dir, { version: '9.9.9', nodeVersion: 'v22.11.0', environ: {} });
+    assert.equal(r.secrets.line, 'none required');
+    assert.deepEqual(r.secrets.required, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 });

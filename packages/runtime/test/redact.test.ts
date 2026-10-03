@@ -88,6 +88,31 @@ test('`require env` pre-registers a secret at run start, masking a response that
   await server.close();
 });
 
+test('a secret another env declares is masked too, though this env does not require it (`M266`, `D1427`)', async () => {
+  // A production token set in the shell of a staging run, leaking into a response. The gate does not
+  // require it here and nothing reads it, so only pre-registration from *every* env's declarations
+  // can mask it. The control is the same run with the name declared nowhere: then it is plain text.
+  const server = await startFixtureServer({ '/whoami': (_req, res) => json(res, 200, { note: 'prod key is pr0d-k3y-xyz' }) });
+  const source = `test "never calls env() at all"
+  api GET /whoami
+  expect status equals 200
+`;
+  const { program } = parseSource(source);
+  const environ = { ...process.env, PROD_KEY: 'pr0d-k3y-xyz' };
+  const bodyOf = async (config: ReturnType<typeof testConfig>) => {
+    const { report } = await runProgram(program, config, { source, environ });
+    assert.equal(report.ok, true, JSON.stringify(report.tests[0], null, 2));
+    return asEntry(report.tests[0], 'functional').steps.find((s) => s.detail?.includes('/whoami'))!.response!.bodyText;
+  };
+
+  const declaredElsewhere = await bodyOf({ ...testConfig(server.baseUrl), requiredEnvByEnv: { prod: ['PROD_KEY'] } });
+  assert.doesNotMatch(declaredElsewhere, /pr0d-k3y-xyz/);
+  assert.match(declaredElsewhere, /•••\(PROD_KEY\)/);
+  assert.match(await bodyOf(testConfig(server.baseUrl)), /pr0d-k3y-xyz/, 'control: declared nowhere, nothing masks it');
+
+  await server.close();
+});
+
 test('an env() secret with a quote in it stays redacted end-to-end through a JSON request body', async () => {
   const server = await startFixtureServer({ '/login': (_req, res) => json(res, 200, { ok: true }) });
 

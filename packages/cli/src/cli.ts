@@ -87,6 +87,7 @@ import {
   resolveConfig,
   selectEnv,
   missingRequiredEnv,
+  requiredBy,
   makeUniqueSeq,
   countTestCases,
   findSessionUsages,
@@ -1424,11 +1425,11 @@ async function loadAndValidate(
     //
     // **`parsedConfig.config`, not `resolved.sessions` — the opposite of the line above.** That one
     // reads the env-filtered roster because a session scoped to another env is not this env's
-    // business. This one reads the whole file because `require env` has no env scope at all
-    // (`resolve.ts` flattens it), so an `env(PW)` in a session scoped elsewhere is undeclared under
-    // every env or none, and skipping it here would report it only when the author happened to be
-    // running that env.
-    ...checkConfigDeclaredEnvRefs(parsedConfig.config, resolved.requiredEnv),
+    // business. This one reads the whole file, and since `M266` (`D1424`) it reads the declarations
+    // off the file too: what declares an `env(PW)` depends on where it is written — an `env` block,
+    // a session scoped `for env`, or neither — and never on `--env`, so an `env(PW)` in a session
+    // scoped elsewhere is reported under every env or none, not only when its author runs that env.
+    ...checkConfigDeclaredEnvRefs(parsedConfig.config),
     ...checkConfigBracedEnvRefs(parsedConfig.config),
     // `M248` (`D1354`) — `TF093`/`TF094`, whole file for the reason `checkCodeFlowSessions` gives.
     ...checkCodeFlowSessions(parsedConfig.config),
@@ -1525,11 +1526,13 @@ async function loadAndValidate(
       // permitted to scan its target is a whole-suite fact, and the per-assertion diagnostic that
       // reports it has to be told.
       envAuthorizedTargets,
-      // M156a/D775 — `TF077`. Read off `resolved` like the four above it, and for a reason that is
-      // simpler than theirs rather than the same: `require env` is a *top-level* directive, so
-      // `resolve.ts` flattens every line in the file into one env-independent list. There is no
-      // per-env variant of this fact and therefore no way to derive it per file.
-      requiredEnv: resolved.requiredEnv,
+      // M156a/D775 — `TF077`. Read off `resolved` like the four above it, but **not** the env's own
+      // set: a test file reads the top-level names only (`M266`, `D1425`), because a test runs
+      // under every env and the language has no per-env test. That list is the same under every
+      // env, so `--env` still cannot change what this rule says. The per-env sets only word the
+      // hint when a test reads a name some env does declare.
+      requiredEnv: resolved.requiredEnvEveryEnv,
+      requiredEnvByEnv: resolved.requiredEnvByEnv,
       // `M239` `D` (`D1319`) — `TF083`. `cwd` IS the config's directory (`M97c-03`, above), so the
       // file's path relative to it is the path the rule judges the `use` literal against.
       helpers: { dirs: resolved.helpers, file: relative(cwd, file).split(sep).join('/'), refuseAll: helperPolicy === 'none' },
@@ -1810,7 +1813,9 @@ async function runCommandCore(argv: string[], watchOpts?: RunCommandWatchOptions
   // for real credentials).
   const missing = missingRequiredEnv(configured, environ);
   if (missing.length > 0) {
-    err(`missing required environment ${missing.length > 1 ? 'variables' : 'variable'}: ${missing.join(', ')}\n  set ${missing.length > 1 ? 'them' : 'it'} in your environment or a local .env file (see \`require env\` in tflw.config).`);
+    // `M266` (`D1426`) — a name only this env requires says so, since that line is in its block.
+    const named = missing.map((name) => `${name}${requiredBy(configured, name)}`);
+    err(`missing required environment ${missing.length > 1 ? 'variables' : 'variable'}: ${named.join(', ')}\n  set ${missing.length > 1 ? 'them' : 'it'} in your environment or a local .env file (see \`require env\` in tflw.config).`);
     return EXIT_USAGE;
   }
 
@@ -2880,8 +2885,9 @@ async function mergeCommand(argv: string[]): Promise<number> {
 
 /**
  * `tflw doctor [--env E] [--json]` — `M249` `D` (`D1370`). What this machine and this project will
- * run with, read offline: see `doctor.ts`. Exit 1 only for the three things that stop every run
- * (no config, Node below 22, browser tests and no browser); 2 for a usage problem, including an
+ * run with, read offline: see `doctor.ts`. Exit 1 only for the four things that stop every run
+ * (no config, Node below 22, browser tests and no browser, a required secret not set — `M266`); 2
+ * for a usage problem, including an
  * `--env` the config does not declare, which is the same refusal `run --env` gives.
  */
 async function doctorCommand(argv: string[]): Promise<number> {
@@ -2906,7 +2912,7 @@ async function doctorCommand(argv: string[]): Promise<number> {
       return EXIT_USAGE;
     }
   }
-  const report = await diagnose(cwd, { ...(env !== undefined ? { env } : {}), version: await getVersion() });
+  const report = await diagnose(cwd, { ...(env !== undefined ? { env } : {}), version: await getVersion(), runEnviron: await buildEnviron(cwd) });
   process.stdout.write(json ? `${JSON.stringify(report, null, 2)}\n` : `${renderDoctor(report)}\n`);
   return report.ok ? EXIT_OK : EXIT_FAIL;
 }
@@ -4758,8 +4764,9 @@ const VERB_HELP: readonly VerbHelp[] = [
     summary: 'what this machine and project will run with, offline',
     lines: [
         '  tflw doctor [--env <name>] [--json]              what this machine and project will run with — versions, the env\'s services,',
-        '                                                      proxy and TLS, the suite, the browsers; offline. Exits 1 only for no',
-        '                                                      config, Node below 22, or browser tests with no browser installed',
+        '                                                      proxy and TLS, the secrets it requires, the suite, the browsers;',
+        '                                                      offline. Exits 1 only for no config, Node below 22, browser tests',
+        '                                                      with no browser installed, or a required secret not set',
     ],
   },
   {

@@ -102,7 +102,16 @@ export interface ResolvedConfig {
   /** `insecure true` — disables TLS certificate verification for the whole run (decision 78). A
    * corporate-QA escape hatch for self-signed/private-CA staging APIs; explicit and greppable. */
   readonly insecure: boolean;
+  /** Every name `tflw run` requires before its first request under **this** env (`M266`, `D1426`):
+   * the top-level `require env` lines, then the selected env's own, deduplicated, in written order.
+   * The startup gate and `tflw check`'s note both read this, so they cannot disagree. */
   readonly requiredEnv: readonly string[];
+  /** The top-level lines alone — required under every env, and the only names a test file may read
+   * (`D1425`). What `TF077` checks test files against, which is why it is not `requiredEnv`. */
+  readonly requiredEnvEveryEnv: readonly string[];
+  /** Each env's own `require env` names, keyed by env name, for every env in the file (`D1422`). The
+   * redactor pre-registers all of them that are set (`D1427`) and `TF077`'s hint names them. */
+  readonly requiredEnvByEnv: Readonly<Record<string, readonly string[]>>;
   /** `exclude "<path>"[, "<path>"...]` — paths, relative to this config's own directory, that bare
    * (no-file-args) discovery must never descend into (SPEC §3, D127, PLAN_DISCOVERY_EXCLUDE.md).
    * `[]` = never declared, no exclusion. Doesn't affect explicit file args. */
