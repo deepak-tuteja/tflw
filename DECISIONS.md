@@ -10279,7 +10279,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1431
 
-<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-doctor.mjs · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
 
 | id | decision |
 |---|---|
@@ -10287,7 +10287,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1432
 
-<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-doctor.mjs · lifted from `PLAN_M267_DOCTOR.md`</sub>
 
 | id | decision |
 | --- | --- |
@@ -10295,7 +10295,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1433
 
-<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-doctor.mjs · lifted from `PLAN_M267_DOCTOR.md`</sub>
 
 | id | decision |
 | --- | --- |
@@ -10311,7 +10311,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1435
 
-<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-doctor.mjs · lifted from `PLAN_M267_DOCTOR.md`</sub>
 
 | id | decision |
 | --- | --- |
@@ -10319,7 +10319,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1436
 
-<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-doctor.mjs · lifted from `PLAN_M267_DOCTOR.md`</sub>
 
 | id | decision |
 | --- | --- |
@@ -14914,7 +14914,7 @@ an `env` block should be able to declare its own required variables.
 
 ### M267
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/scripts/verify-doctor.mjs · lifted from `PLAN_M267_DOCTOR.md`</sub>
 
 **PLAN_M267 — `doctor`'s ✓ means the run starts**
 
