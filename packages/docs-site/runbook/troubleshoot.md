@@ -6,7 +6,8 @@ recognise — `TF036`, `TF083` — is in [the diagnostics reference](/reference/
 per code with what it means and an example.
 
 Start with `npx tflw doctor`: it reports the config, env, services, proxy, TLS, secrets, suite and
-browsers a run would use, and exits 1 with the fix for the four things that stop a run.
+browsers a run would use, and exits 1 with the fix for anything that would stop `tflw run` before
+its first test.
 
 <Published :when="false">
 

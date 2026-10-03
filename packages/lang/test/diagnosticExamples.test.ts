@@ -124,7 +124,7 @@ function runProbe(probe: DiagnosticProbe): readonly Diagnostic[] {
  *     widening was possible and merely expensive; here two of the six are impossible, and an
  *     impossibility that is not written down reads exactly like an oversight.
  *
- * The list is read out of `cli.ts` rather than restated, so adding a sixth pass to the CLI reddens
+ * The list is read out of `validate.ts` (`cli.ts` until `M267`, `D1431`) rather than restated, so adding a sixth pass to the CLI reddens
  * this test with the new name in the message. That crosses a package boundary on purpose: the whole
  * defect is two files disagreeing, and a copy of the list in this package could not have caught it.
  */
@@ -150,14 +150,14 @@ const CONFIG_PHASE_NOT_REACHABLE = new Map([
 ]);
 
 test('the config probe harness runs what `tflw check` runs, or says which passes it cannot', () => {
-  const cliPath = new URL('../../cli/src/cli.ts', import.meta.url);
+  const cliPath = new URL('../../cli/src/validate.ts', import.meta.url);
   const cli = readFileSync(cliPath, 'utf8');
 
   // The composition is one array literal, so it is read as one block rather than swept whole-file —
   // `checkAllowHostsCoversBaseUrls` is named eleven times in prose in this file and a bare sweep
   // would count comments as calls, which is `M169-04`'s shape in miniature.
   const start = cli.indexOf('const configEnvDiags = [');
-  assert.notStrictEqual(start, -1, "loadAndValidate's config composition could not be located in cli.ts — it was renamed, and this test is the thing that was supposed to notice");
+  assert.notStrictEqual(start, -1, "loadAndValidate's config composition could not be located in validate.ts — it was renamed, and this test is the thing that was supposed to notice");
   const block = cli.slice(start, cli.indexOf('\n  ];', start));
   // `flatMap` over the guard rather than `m[1]!`: under `noUncheckedIndexedAccess` a capture group reads
   // as `string | undefined`, and a match that somehow carried no name is not a call — dropping it is the

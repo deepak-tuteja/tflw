@@ -38,11 +38,11 @@ env staging
 EOF
 ```
 
-`--env staging` picks it; with no `--env`, the block marked `default` runs. `doctor` shows what an
-env resolves to without sending a request:
+`--env staging` picks it; with no `--env`, the block marked `default` runs. `doctor` shows what a
+run would meet, without sending a request; give it the env and the file the run below uses:
 
 ```sh runbook
-npx tflw doctor --env staging || echo "tflw exited $?"
+npx tflw doctor --env staging tests/catalogue.tflw || echo "tflw exited $?"
 ```
 
 ```text runbook-output
@@ -53,8 +53,8 @@ web       https://staging.coffee-shelf.example
 proxy     none set — requests go straight to each service
 tls       certificates verified; no client certificate
 secrets   SHOP_TOKEN (env staging only) — not set: SHOP_TOKEN
-suite     15 files, 41 tests, 19 in a browser
-browsers  playwright 1.58.0: chromium
+suite     1 file, 4 tests, 2 in a browser
+browsers  playwright 1.58.0: chromium · run uses chromium
 
 ✗ SHOP_TOKEN (required by env staging) is required by `require env` and not set — `tflw run` refuses before its first request; set it in your environment or a local .env file
 tflw exited 1
@@ -99,7 +99,7 @@ it, and the `.gitignore` the example wrote keeps it out of git:
 
 ```sh runbook
 echo "SHOP_TOKEN=paste-the-staging-token-here" > .env
-npx tflw doctor --env staging | grep secrets
+npx tflw doctor --env staging tests/catalogue.tflw | grep secrets
 ```
 
 ```text runbook-output

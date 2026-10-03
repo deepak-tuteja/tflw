@@ -2691,7 +2691,8 @@ const REGISTRY = [
     id: 'check-session-body-sees-every-session',
     milestone: 'm147d',
     pkg: 'tflw',
-    file: 'packages/cli/src/cli.ts',
+    // `M267` (`D1431`): the config stage moved to `validate.ts` with the rest of `run`'s checks.
+    file: 'packages/cli/src/validate.ts',
     what: '`M137f-02` verbatim: the config-stage check goes back to reading every declared session against the active env\'s service map, so a session scoped to another env is `TF026` at its own line before a single assertion runs. This is the pre-D642 line, restored',
     find: '...checkSessionBody(Array.from(resolved.sessions.values()), Object.keys(resolved.services), envBaseUrls, envTimeouts),',
     replace: '...checkSessionBody(parsedConfig.config.sessions, Object.keys(resolved.services), envBaseUrls, envTimeouts),',

@@ -377,7 +377,7 @@ for a usage problem. See [splitting a suite across CI jobs](/guide/ci-and-report
 
 ## `tflw doctor`
 
-`tflw doctor [--env <name>] [--json]`
+`tflw doctor [files...] [--env <name> | --all-envs] [--browser <engine>] [--allow-public-target <origin>] [--forbid-insecure] [--no-helpers] [--json]`
 
 <table>
   <thead><tr><th>Flag</th><th>Effect</th></tr></thead>
@@ -395,8 +395,13 @@ and every `api` base it resolves to, the proxy variables and whether anything re
 how much of it drives a browser, which Playwright browsers are downloaded, and the secrets the env
 requires — by name, and whether each is set, never the value. **Read-only and offline** — it
 resolves the config (with the project's `.env`, as `run` does) and asks Playwright where its
-browsers are; it sends no request. Exits 1 only for what stops every run: no `tflw.config`, Node
-older than 22, browser tests with no browser installed, or a required secret not set. See [installing tflw](/runbook/install).
+browsers are; it sends no request. **Exits 1 exactly when `tflw run` with the same files and flags
+would refuse before its first test:** no `tflw.config`; Node older than 22; a `tflw check` error
+under the env (the first one is quoted, with the `tflw check` command that lists the rest); browser
+tests when the engine `run` will launch is not downloaded; `--forbid-insecure` beside `insecure
+true`; or a required secret not set. Warnings, marked ⚠, never change the exit code: a `.env` git
+would commit, the warnings `tflw check` reports, `insecure true`. `--all-envs` prints one verdict per
+env. See [installing tflw](/runbook/install).
 
 ## `tflw ui [dir]`
 
