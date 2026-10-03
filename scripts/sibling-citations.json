@@ -1,9 +1,9 @@
 {
   "comment": "Every identifier testFlow-tests cites — in tracked prose and, since M169d3, in tracked code — and which of its files cite it, read from the ref below (D709/D710/D864). The code half is what that repository does NOT claim in its own scripts/own-identifiers.json, plus whatever a site qualifies as `tflw <id>`. Never hand-edit — refresh with `node scripts/refresh-sibling-citations.mjs --pr <N>`, and note that the sibling's own `verify:provenance` is what fails when this goes stale. `checkFixtures` is a different kind of fact and is documented where it is read, in scripts/verify-check-coverage.mjs (M172e).",
   "repo": "deepak-tuteja/tflw-tests",
-  "ref": "refs/pull/137/head",
-  "sha": "322f8ccca878adb029090f29c2378e6e34dc1ef3",
-  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/322f8ccca878adb029090f29c2378e6e34dc1ef3",
+  "ref": "refs/pull/139/head",
+  "sha": "533795a058729bd6ae923c913bf0b01ffba72e7a",
+  "source": "https://github.com/deepak-tuteja/tflw-tests/tree/533795a058729bd6ae923c913bf0b01ffba72e7a",
   "files": [
     "CONSTRUCTS.md",
     "CONTRIBUTING.md",
@@ -24,7 +24,7 @@
     "tflw-acceptance/perf/profile/FINDINGS_M36_SESSION_REFRESH.md",
     "tflw-acceptance/scan-door/README.md"
   ],
-  "codeFiles": 956,
+  "codeFiles": 957,
   "checkFixtures": [
     "TF001",
     "TF002",
@@ -109,7 +109,8 @@
     "TF093",
     "TF094",
     "TF095",
-    "TF096"
+    "TF096",
+    "TF097"
   ],
   "citations": {
     "D10": [
@@ -263,6 +264,18 @@
     ],
     "D1397": [
       "CONTRIBUTING.md"
+    ],
+    "D1422": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
+    ],
+    "D1426": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
+    ],
+    "D1428": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs"
     ],
     "D17": [
       "tflw-acceptance/README.md",
@@ -2560,6 +2573,13 @@
       "README.md",
       "tests/api/orders/file-formats.tflw"
     ],
+    "M266": [
+      "CONSTRUCTS.md",
+      "scripts/lib/constructs.mjs",
+      "scripts/verify-check-diagnostics.mjs",
+      "scripts/verify-construct-acceptance.mjs",
+      "tests/.checkonly/config-directives/require-per-env.config"
+    ],
     "M29": [
       "CONSTRUCTS.md",
       "tflw-acceptance/README.md"
@@ -3054,6 +3074,12 @@
     ],
     "D1413": [
       "tests/.tflw-ui/kinds.tflw"
+    ],
+    "D1424": [
+      "scripts/verify-check-diagnostics.mjs"
+    ],
+    "D1429": [
+      "scripts/verify-check-diagnostics.mjs"
     ],
     "D144": [
       "tests/.checkonly/missing-referenced-file.tflw"

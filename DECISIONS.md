@@ -10207,7 +10207,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1422
 
-<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
 
 | id | decision |
 |---|---|
@@ -10223,7 +10223,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1424
 
-<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
 
 | id | decision |
 |---|---|
@@ -10239,7 +10239,7 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1426
 
-<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
 
 | id | decision |
 |---|---|
@@ -10255,11 +10255,19 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 
 ### D1428
 
-<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+<sub>cited from SPEC.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
 
 | id | decision |
 |---|---|
 | `D1428` | **`tflw check`'s note counts the selected env's set** (`ℹ require env: 1 of 3 not set here …`), because that is what the run under the same `--env` would refuse. No change to its shape or exit code. |
+
+### D1429
+
+<sub>cited from tflw-tests/scripts/verify-check-diagnostics.mjs · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1429` | **A name declared both at the top level and in an env block is a warning** (new code `TF097`): the block's line says nothing. The quick fix deletes the block's line. |
 
 ### M0
 
@@ -14824,7 +14832,7 @@ came to be rather than stating it.
 
 ### M266
 
-<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +4 more · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
 
 **PLAN_M266 — a secret one env needs is required by that env**
 
