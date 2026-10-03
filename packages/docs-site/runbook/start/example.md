@@ -75,7 +75,7 @@ proxy     none set — requests go straight to each service
 tls       certificates verified; no client certificate
 secrets   none required
 suite     12 files, 37 tests, 18 in a browser
-browsers  playwright 1.58.0: chromium
+browsers  playwright 1.58.0: chromium · run uses chromium
 
 ✓ nothing here stops a run
 ```

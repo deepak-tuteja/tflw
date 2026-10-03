@@ -10269,6 +10269,78 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 |---|---|
 | `D1429` | **A name declared both at the top level and in an env block is a warning** (new code `TF097`): the block's line says nothing. The quick fix deletes the block's line. |
 
+### D1430
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1430` | **`tflw doctor` shows the env's required secrets by name and whether each is set, never a value**, and a required name that is not set is one of the things that fail it (exit 1). This is now the one place a reader can see that two envs differ. *Amended in the build:* the scoping said "informational only, exit codes unchanged", but doctor's own rule is that it fails for exactly the things that stop every run, and `run` refuses before its first request over a missing secret — so doctor printing *nothing here stops a run* would have been false. doctor also resolves against the project's `.env` now, as `run` does; it read the shell alone before. |
+
+### D1431
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1431` | **Chapter 10 drops the `.env` placeholder.** The chapter moves `require env SHOP_TOKEN` into `env staging`, shows `tflw run` under `local` passing without it, and shows the refusal with `--env staging`, which stops before any request, so no staging host is needed. |
+
+### D1432
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1432 | **A fifth failure: the project does not validate under this env.** One problem line: the count of errors, the first one (`code`, file and line), and the remedy `tflw check --env <env>`. A file that does not parse is one of these errors, so the `suite` line's "do not parse" note goes. Doctor does not print every diagnostic, because `check` is the command that does. |
+
+### D1433
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1433 | **The browser check names the engine `run` will launch:** Chromium, or the engine `--browser` names. When browser tests exist and that engine is not downloaded, doctor fails and names the engines that are downloaded, so the remedy can be either `tflw install-browsers --browser <engine>` or a different `--browser`. The `browsers` line marks the selected engine. |
+
+### D1434
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1434 | **Doctor accepts the `run` flags whose refusal depends on the project or the machine, with `run`'s meaning:** `--env`, positional files (which narrow validation exactly as they narrow `run`'s), `--browser`, `--allow-public-target`, `--forbid-insecure` and `--no-helpers`, parsed from `run`'s own flag table. Not accepted: a malformed flag value and a filter that selects nothing (`--tag`, `--kind`, `--only`, `--failed`), which are the invocation's mistakes and which `run` names instantly; a `--log-file` that cannot be opened and a demo service that cannot start, which are found only by writing a file and starting a server; and every flag that only changes a run after it starts. |
+
+### D1435
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1435 | **A warnings tier, marked ⚠, never changes the exit code.** It is printed between the facts and the verdict. It holds probable mistakes: `.env` present and not ignored by git, the count of checker warnings (with `tflw check` as the place to read them), and `insecure true` active for the env. `✓ nothing here stops a run` still prints when only warnings exist. `--json` carries them as `warnings: string[]` beside `problems`. |
+
+### D1436
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1436 | **Whether git ignores `.env` is git's answer, not a reading of `.gitignore`.** Doctor runs `git check-ignore -q -- .env` in the project: exit 0 is ignored, 1 is a warning, and anything else (not a repository, no git) is no warning. Re-implementing gitignore matching would disagree with git on nested files, negations and global excludes. It is a local process, so doctor stays offline. |
+
+### D1437
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1437 | **`--all-envs` prints one verdict per env** (`✓`, `⚠`, or `✗` with the first problem) and exits 1 if any env fails. It combines with the other accepted flags except `--env`, which is a usage error beside it. `--json` gives `envs: [{ name, ok, problems, warnings }]`. A config with no `env` blocks has one row. |
+
+### D1438
+
+<sub>cited from SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1438 | **Still out of scope, by decision:** network reachability (`D1370`'s reason stands: a doctor that sends requests is a test run with a different exit code, wrong exactly when the network is the problem); a `--fix` mode (each problem already ends in its remedy, and a read-only command stays read-only); launching a browser to prove it starts (deferred: a downloaded engine can still lack host libraries on Linux, but proving it costs seconds and no user has reported it); comparing the running `tflw` with the project's installed copy (deferred to publish, since nothing is on npm). |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -14839,5 +14911,16 @@ came to be rather than stating it.
 An `env` block may declare its own `require env` names, required only when that env runs. Scoped
 and built 2026-10-02, answering the question the runbook's chapter 10 left open in `M260`: whether
 an `env` block should be able to declare its own required variables.
+
+### M267
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M267_DOCTOR.md`</sub>
+
+**PLAN_M267 — `doctor`'s ✓ means the run starts**
+
+`tflw doctor` ends with `✓ nothing here stops a run`. After this milestone that line is true for the
+exact `tflw run` the reader is about to type: doctor runs the same validation `run` runs, under the
+same flags, and checks the browser engine `run` will launch. It also gains a warnings tier that
+never changes the exit code, and `--all-envs`, one verdict per env. Scoped 2026-10-03.
 
 <!-- GENERATED:decisions:end -->

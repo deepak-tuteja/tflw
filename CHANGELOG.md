@@ -17,6 +17,23 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — `tflw doctor`'s ✓ means the run starts (M267)
+
+- **Doctor makes the checks `tflw run` makes** before its first request, through the same code: a
+  `tflw check` error under the env — a `TF060` scan target the env does not authorize, a service it
+  does not declare, a file that does not parse — fails doctor as it stops `run`. The problem line
+  quotes the first error and the `tflw check` command that lists the rest. A project with no test
+  files fails it too.
+- **The browser check names the engine `run` will launch:** Chromium, or `--browser`'s. With only
+  Firefox downloaded, a plain `run` launches Chromium, and doctor now says so.
+- **Doctor takes `run`'s flags that can stop a run:** file arguments, `--browser`,
+  `--allow-public-target`, `--forbid-insecure` and `--no-helpers`, each with `run`'s meaning.
+- **Warnings, marked ⚠, never change the exit code:** a `.env` git does not ignore, the warnings
+  `tflw check` reports, and `insecure true`.
+- **`tflw doctor --all-envs`** prints one verdict per env and exits 1 if any env cannot run.
+- `--json` gains `checks` and `warnings`, and `browsers.engine`; `suite.unparsed` is gone, since a
+  file that does not parse is now a `checks` error.
+
 ### Added — an `env` block may require its own secrets (M266)
 
 - **`require env NAME` inside an `env` block** requires the name only when that env runs. A secret

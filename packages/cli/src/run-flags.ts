@@ -72,6 +72,18 @@ export function pageRunFlags(): readonly RunFlag[] {
 }
 
 /**
+ * `tflw doctor`'s flags (`M267`, `D1434`): `run`'s own rows for every flag that can make `run`
+ * refuse before its first test — read off `RUN_FLAGS`, so the spelling and shape are `run`'s — and
+ * doctor's two. A flag that only changes a run after it starts cannot change doctor's verdict, so
+ * it is not here.
+ */
+export const DOCTOR_FLAGS: readonly RunFlag[] = [
+  ...RUN_FLAGS.filter((f) => ['--env', '--browser', '--allow-public-target', '--forbid-insecure', '--no-helpers'].includes(f.flag)),
+  { flag: '--json', key: 'json', shape: 'bool', subject: 'cli' },
+  { flag: '--all-envs', key: 'allEnvs', shape: 'bool', subject: 'cli' },
+];
+
+/**
  * Read `argv` against the table. Values land on their row's `key`; a bare word is a file. What
  * each value MEANS is still judged by the caller, which is where it always was — this only
  * replaces the chain of `if`s that decided which variable a word went into.
@@ -81,10 +93,12 @@ export function readRunFlags(
   value: (argv: string[], i: number, flag: string) => string,
   inline: (arg: string, flag: string) => string,
   unknown: (arg: string) => never,
+  /** The rows to accept — `RUN_FLAGS`, or `DOCTOR_FLAGS` for `tflw doctor` (`M267`). */
+  rows: readonly RunFlag[] = RUN_FLAGS,
 ): { readonly files: string[]; readonly values: Record<string, string | boolean | string[]> } {
   const files: string[] = [];
   const values: Record<string, string | boolean | string[]> = {};
-  const byFlag = new Map(RUN_FLAGS.map((f) => [f.flag, f]));
+  const byFlag = new Map(rows.map((f) => [f.flag, f]));
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (!a.startsWith('--')) {

@@ -52,22 +52,24 @@ proxy     none set — requests go straight to each service
 tls       certificates verified; no client certificate
 secrets   none required
 suite     42 files, 381 tests, 60 in a browser
-browsers  playwright 1.62.0: chromium
+browsers  playwright 1.62.0: chromium · run uses chromium
 
 ✓ nothing here stops a run
 ```
 
 It is read-only and sends no request. It resolves `tflw.config` the way `tflw run` would, for the env
-`--env` names or the default one, and reports what stands between you and a run. It exits 1 for the
-four things that stop a run: no `tflw.config`, Node older than 22, browser tests with no browser
-downloaded, and a secret `require env` names that is not set. Each problem line carries its fix. `tflw doctor --json` prints the same facts as
-one object, which is the thing to paste into a bug report.
+`--env` names or the default one, and reports what stands between you and a run. It exits 1 exactly
+when `tflw run` with the same flags would stop before its first test, and each `✗` line carries its
+fix. Lines marked `⚠` are worth fixing but never stop a run. `tflw doctor --all-envs` gives one
+verdict per env, and `tflw doctor --json` prints the same facts as one object, which is the thing to
+paste into a bug report.
 
 Two lines are worth reading even when doctor is green:
 
 - **proxy** — tflw has no proxy setting of its own. When `HTTPS_PROXY` is set, Node's `fetch` uses it
   only with `NODE_USE_ENV_PROXY=1`, and never for a service reached with a client certificate.
-- **tls** — `insecure true` in the env turns certificate checks off, and doctor says so in capitals.
+- **tls** — `insecure true` in the env turns certificate checks off, and doctor says so in capitals
+  and again as a `⚠`.
   A client certificate that is *not on disk yet* is fine when a `before all` hook writes it.
 
 ## 4. Upgrading
