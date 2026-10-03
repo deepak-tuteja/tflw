@@ -10205,6 +10205,62 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 - **`G8`:** `runbook/project.md`'s layout section says what `init` writes (`example.tflw` at the
   root) and how a project grows into `tests/`, instead of implying `init` writes the grown layout.
 
+### D1422
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1422` | **`require env A, B` is legal as an entry of an `env` block**, same grammar as the top-level line, repeatable. It is required only when that env is selected. The top-level line keeps its meaning: required under every env. |
+
+### D1423
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1423` | **Not in `defaults`.** `defaults` applies to every env, so a `require env` there would be the top-level line with a second spelling. Refused by the checker's existing placement rule (`TF025`), whose hint names the top level first. |
+
+### D1424
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1424` | **What declares a reference depends on where it is written, never on `--env`:** in an `env` block, the top level or that block; in a session or signer scoped `for env a, b`, the top level or **every** env in its scope; anywhere else in the config (unscoped sessions and signers, `defaults`, top-level lines), the top level only. |
+
+### D1425
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1425` | **A test file reads top-level declarations only.** A test runs under every env (the language has no per-env test), so a test reading a secret only `staging` declares would make every other env's suite die mid-run. `TF077`'s hint names the envs that do declare it and points at the two repairs: declare it at the top level, or move the read into the env block or into a session scoped to that env. |
+
+### D1426
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1426` | **The startup check requires the top level plus the selected env's block.** Its message names the env when the name came from one: `missing required environment variable: SHOP_TOKEN (required by env staging)`. |
+
+### D1427
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1427` | **The redactor pre-registers every declared name that has a value, across all envs**, not just the selected env's. Masking a production token that happens to be set in a staging run costs nothing, and it is the safe direction. |
+
+### D1428
+
+<sub>cited from SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+| id | decision |
+|---|---|
+| `D1428` | **`tflw check`'s note counts the selected env's set** (`ℹ require env: 1 of 3 not set here …`), because that is what the run under the same `--env` would refuse. No change to its shape or exit code. |
+
 ### M0
 
 <sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN.md`</sub>
@@ -14765,5 +14821,15 @@ came to be rather than stating it.
   itself, and they could never be re-cut byte-identical: the port, the start time, every duration
   and the shop's `date` header changed every cut. Each milestone that moved the screenshot inputs
   kept the old PNGs and committed only the manifest.
+
+### M266
+
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M266_PER_ENV_SECRETS.md`</sub>
+
+**PLAN_M266 — a secret one env needs is required by that env**
+
+An `env` block may declare its own `require env` names, required only when that env runs. Scoped
+and built 2026-10-02, answering the question the runbook's chapter 10 left open in `M260`: whether
+an `env` block should be able to declare its own required variables.
 
 <!-- GENERATED:decisions:end -->

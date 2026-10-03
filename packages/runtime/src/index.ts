@@ -4,7 +4,7 @@
 export * from './types.js';
 export { MIN_REDACTABLE_LENGTH, Redactor, redactEvent, redactReport } from './redact.js';
 export { RuntimeError } from './eval.js';
-export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, type EnvSelection } from './resolve.js';
+export { ConfigError, selectEnv, resolveConfig, missingRequiredEnv, declaredEnvNames, requiredBy, type EnvSelection } from './resolve.js';
 export { runProgram, makeUniqueSeq, countTestCases, findSessionUsages, SessionCache, type RunOptions, type RunOutput } from './interpreter.js';
 // M130b (D331/D332) — the run-level collector and the facts it collects. Exported for the CLI, which
 // owns the sink for a whole invocation, and for `@tflw/reporter`'s repro emitter.

@@ -97,6 +97,7 @@ import { evaluateSnapshot, snapshotPaths } from './snapshot.js';
 import { camelCaseName, interceptTypelessModuleWarning, loadHelperModule } from './helpers.js';
 import { loadTableRows, type RowCell } from './dataTable.js';
 import { Redactor, redactReport } from './redact.js';
+import { declaredEnvNames } from './resolve.js';
 import { headerMatchesRedactPattern, maskDetailValue, pathMatchesRedactPattern, redactFields, redactHeaderFields, redactUrlQuery } from './fieldRedact.js';
 import { evaluateSchemaMatch, loadOpenApiDocumentForCrawl } from './contract.js';
 // M137c (D435/D436) — the crawl engine. Everything it touches in the world is injected from here, so
@@ -384,8 +385,9 @@ async function runProgramInner(program: Program, config: ResolvedConfig, opts: R
   // redaction ordering window before it can open: previously a secret was only registered the
   // first time its `env(NAME)` was *evaluated*, so a secret first read late in a run wouldn't mask
   // an earlier step whose trace already contained that value. The other half is the final
-  // full-report redaction pass this function does just before returning, below.
-  for (const name of config.requiredEnv) {
+  // full-report redaction pass this function does just before returning, below. Since `M266`
+  // (`D1427`) that is every name any env declares, not just this env's: wider is the safe direction.
+  for (const name of declaredEnvNames(config)) {
     const value = environ[name];
     if (value !== undefined) redactor.register(name, value);
   }
@@ -1553,7 +1555,7 @@ async function runLoadCore(program: Program, config: ResolvedConfig, opts: LoadO
   const selfDiag = startSelfDiagnosis();
   const environ = opts.environ ?? process.env;
   const redactor = new Redactor();
-  for (const name of config.requiredEnv) {
+  for (const name of declaredEnvNames(config)) {
     const value = environ[name];
     if (value !== undefined) redactor.register(name, value);
   }

@@ -50,6 +50,7 @@ services  api http://localhost:4001/v1
           api inventory http://localhost:4002
 proxy     none set — requests go straight to each service
 tls       certificates verified; no client certificate
+secrets   none required
 suite     42 files, 381 tests, 60 in a browser
 browsers  playwright 1.62.0: chromium
 
@@ -58,8 +59,8 @@ browsers  playwright 1.62.0: chromium
 
 It is read-only and sends no request. It resolves `tflw.config` the way `tflw run` would, for the env
 `--env` names or the default one, and reports what stands between you and a run. It exits 1 for the
-three things that stop every run: no `tflw.config`, Node older than 22, and browser tests with no
-browser downloaded. Each problem line carries its fix. `tflw doctor --json` prints the same facts as
+four things that stop a run: no `tflw.config`, Node older than 22, browser tests with no browser
+downloaded, and a secret `require env` names that is not set. Each problem line carries its fix. `tflw doctor --json` prints the same facts as
 one object, which is the thing to paste into a bug report.
 
 Two lines are worth reading even when doctor is green:

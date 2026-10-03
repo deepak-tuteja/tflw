@@ -122,6 +122,7 @@ env local default
 env staging
   api "https://stg.example.com/api"
   timeout wait 60s              # overrides just this key
+  require env STAGING_TOKEN     # required only when this env runs (§3.4)
 ```
 
 - Two tiers only: `defaults`, then the active `env` (same-key-wins). No `extends` chains.
@@ -548,15 +549,44 @@ session shopper
 ### 3.4 Secrets (P#30)
 
 ```
-require env ADMIN_USER, ADMIN_PW
+require env ADMIN_USER, ADMIN_PW          # required under every env
+
+env staging
+  api "https://stg.example.com/api"
+  require env STAGING_TOKEN               # required only when staging runs
+  header "Authorization" is env(STAGING_TOKEN)
 ```
 
 - `require env` validates at startup; **one** error lists *all* missing vars. Every `require env`
   variable is also pre-registered with the redactor at run start (fixed in M2.65, P#56) —
   masked from the very first step even if its `env(NAME)` is never actually evaluated anywhere in
   the run (e.g. a var only used to satisfy a session another file doesn't touch, but that happens
-  to leak into an unrelated response).
-- **Every `env(NAME)` must be declared** (`TF077`, M156a). The startup gate above checks the names
+  to leak into an unrelated response). Since `M266` that is every name **any** env declares, not
+  only the selected env's (`D1427`): a production token set in a staging run's shell is masked too.
+- **Two positions, one grammar** (`M266`, `D1422`). A top-level line requires its names under every
+  env. The same line inside an `env` block requires them only when that env is selected, so a secret
+  only staging sends is not demanded of a local run. Not in `defaults` (`TF025`, `D1423`): it applies
+  to every env, which is what the top-level line already says. A name an `env` block repeats from the
+  top level is `TF097`, a warning — the block's line adds nothing. The startup refusal names the env
+  for a name only it requires: `missing required environment variable: STAGING_TOKEN (required by env
+  staging)` (`D1426`).
+- **Every `env(NAME)` must be declared — for where it is read** (`TF077`, M156a; positions `M266`,
+  `D1424`/`D1425`). What declares a reference depends on where it is written, never on `--env`, so
+  `tflw check` says the same thing under every env:
+
+  | the `env(NAME)` is in… | declared by… |
+  |---|---|
+  | an `env` block | the top level, or that block's own `require env` |
+  | a session or signer scoped `for env a, b` | the top level, or a line in **every** env of its scope |
+  | `defaults`, an unscoped session or signer, anything else in the config | the top level only |
+  | a test file | the top level only |
+
+  A test file reads the top level only because a test runs under every env and the language has no
+  per-env test: a name only `staging` requires would leave every other env's run to die at the step
+  that reads it. When some env does declare the name, `TF077` says which — *`STAGING_TOKEN` is read
+  here, but only `env staging` requires it* — and the hint names the move that fixes it.
+
+  Why the rule exists at all: the startup gate above checks the names
   the config declares, and nothing else — so before M156 an `env(NAME)` no `require env` line
   covered was invisible to it and died mid-suite, at whichever step reached it first, with
   `require env` present and correct. `tflw check` now refuses it, as an **error**: the reference is
@@ -572,7 +602,9 @@ require env ADMIN_USER, ADMIN_PW
   invocations by design and §3.2's promise that `check` needs no secrets is kept word for word
   (`M156c`, `D779` — the note carries no span, no code and no severity, and does not appear in
   `--format json`, because a per-file `diagnostics` array is for things anchored to a span).
-  It is silent when every declared variable is present. `tflw run` is what refuses, before its
+  It counts what the selected env requires — the top level plus that env's own lines (`M266`,
+  `D1428`) — which is what `tflw run` under the same `--env` would refuse over. It is silent when
+  every such variable is present. `tflw run` is what refuses, before its
   first request. §17's `require` summary names all three commands for this reason (`M156d`,
   `D780`): each clause of it is one command's behaviour, so none of them can drift without a
   reader being able to point at which one.
@@ -845,7 +877,8 @@ env ci
 exclude "tflw-acceptance", "fixtures/broken"
 ```
 
-- Top-level, like `require env` (§3.4) — not a `defaults`/`env` entry. Declares one or more paths,
+- Top-level only — not a `defaults`/`env` entry (unlike `require env`, which may also sit in an `env`
+  block, §3.4). Declares one or more paths,
   relative to this `tflw.config`'s own directory, that `tflw run`/`check`/`migrate`/`watch`'s bare
   (no-file-args) discovery must never descend into — for a nested tree that's really a second,
   independent suite with its own `tflw.config` (different sessions/envs), so it shouldn't be swept
@@ -4486,7 +4519,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF074` | Checker (config): **a `session … for env <name>` naming an env this config does not declare.** The session would exist in no env, so every `test … as <name>` would fail with `TF028`, and the session would silently drop out of every authorization scan. | a `for env` clause naming an env this config does not declare → `unknown env "stagng"` |
 | `TF075` | Parser: **input nested more deeply than the parser will go** — more than 256 nested unary minus signs. The message names the limit; at this depth the file was almost certainly generated. | a `let` whose value carries 300 unary minuses → `` too many nested `-` signs `` |
 | `TF076` | Checker (config): **a `header "X" is "Y" for <service>` naming a service no `env` declares.** The header would be attached to no request at all, while the config says it is sent. Checked against every service declared anywhere in the file, since a header in `defaults` may scope to a service only one env declares. | a header scope clause naming a service this config does not declare → `unknown service "shp"` |
-| `TF077` | Checker: **an `env(NAME)` that no `require env` line declares.** `require env` checks its names before the first request, so a name it does not list would fail mid-suite instead. Checked in `tflw.config` and in every test file. **An error**, even though the suite runs while `NAME` happens to be set; whether it is set is reported by `tflw check` as a note that does not change the exit code. | a secret read by a test that the config never declares → `` no `require env` line declares it `` |
+| `TF077` | Checker: **an `env(NAME)` that no `require env` line declares for where it is read.** `require env` checks its names before the first request, so a name it does not list would fail mid-suite instead. Checked in `tflw.config` and in every test file. A test file and anything in the config that applies under every env read the top-level lines only; a line inside an `env` block may also read that block's own `require env`, and a session or signer scoped `for env` one that every env in its scope declares. **An error**, even though the suite runs while `NAME` happens to be set; whether it is set is reported by `tflw check` as a note that does not change the exit code. | a secret read by a test that the config never declares → `` no `require env` line declares it ``; an env reading a secret only another env requires → `` only `env staging` requires it `` |
 | `TF078` | Checker: **`{env(NAME)}` inside a string**, which tflw does not interpolate — the request would send the text `{env(NAME)}` itself, and the server would answer something like a 401 with nothing naming the cause. Write `env(NAME)` as the value on its own, outside the quotes. **A warning**: what a string contains is the author's business, so the check only points it out. | a header written as a braced interpolation of a secret → `is literal text, not a secret` |
 | `TF079` | Runtime (browser): **an `accept dialog` or `dismiss dialog` that no dialog ever answered.** The step waits for the *next* native dialog; if none fires before the test ends, the step did nothing. Reported at that step's own line. **A warning, and only when the test otherwise passed**: after a failure, the step that would have raised the dialog may simply never have run. `beforeunload` may honestly never appear in a headless run, since browsers raise it only after a real user gesture. | a `dismiss dialog` in a test where no dialog is ever raised — raised at run time, not by `tflw check` |
 | `TF080` | Runtime (browser): **an `accept dialog with "<text>"` whose answer went to a dialog that takes none.** Only a `prompt` has a field to fill; an `alert` or `confirm` would silently drop the text. **A warning**, and one `tflw check` cannot give: which kind of dialog a page raises is only known when it runs. The dialog is still accepted. | `accept dialog with "Blue"` before a click that raises an `alert` — raised at run time, not by `tflw check` |
@@ -4506,6 +4539,7 @@ rows were wrong — including `TF003`, whose example described an indentation mi
 | `TF094` | Checker (config): **a `session … oauth2 code` with no `redirect`, or one that is not a loopback `http` URL.** The code comes back to a listener tflw binds on this machine, so the redirect names it — `127.0.0.1`, `localhost` or `[::1]` over plain `http`, port `0` for one the OS chooses. A redirect written through `env(…)` is refused the same way at run time. **An error**: any other host would receive the code where tflw is not listening. | an `https` redirect to another host → `a loopback listener speaks plain` |
 | `TF095` | Checker: **a `rows` block under a test with no `with each` table.** One run has nothing to count across; the judgement belongs in the test body as an ordinary `expect`. **An error.** | a `rows` block under a plain test → `` which has no `with each` table `` |
 | `TF096` | Checker: **a `rows` line whose subject a finished row cannot answer.** A row is judged after it ends, from its last response and its bindings; its page is closed by then, so a locator, `page`, a dialog or a network observation has nothing left to read. **An error.** | a `rows` line about a locator → `can read a row's last response and its bindings` |
+| `TF097` | Checker (config): **an `env` block's `require env` naming a variable the top-level line already requires.** The top-level line requires it under every env, so the block's line changes nothing and reads as if only this env needed it. **A warning.** | an env block repeating a top-level `require env` name → `is already required under every env` |
 <!-- GENERATED:diagnostics:end -->
 
 Gaps in the numbering (`TF004`–`TF009`, `TF017`–`TF019`) are reserved, not skipped by accident —

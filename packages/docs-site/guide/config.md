@@ -104,6 +104,25 @@ evaluated). `.env` at the project root auto-loads for local dev; real environmen
 over it. Anything that ever flowed through `env(NAME)` prints as `•••(NAME)` everywhere — reports,
 traces, CLI output — automatically, by construction.
 
+A top-level `require env` line is required under every env. A secret only one environment sends is
+required by that environment's block instead, so a local run does not have to set it:
+
+```tflw-config
+env local default
+  api "http://localhost:3000"
+
+env staging
+  api "https://staging.example.com"
+  require env STAGING_TOKEN
+  header "Authorization" is env(STAGING_TOKEN)
+```
+
+`tflw run --env staging` without it stops before the first request and says
+`STAGING_TOKEN (required by env staging)`. A test file can only read the top-level names, because a
+test runs under every env; read a per-env secret in its `env` block, or in a session scoped to that
+env with `session robot for env staging`. `tflw check` refuses an `env(NAME)` read where nothing
+requires it, and names the env that does.
+
 For a secret that **doesn't** come from an env var — a token the API mints and hands back mid-run,
 a `Set-Cookie`, an API key baked into a fixture — name its position with `redact` instead:
 

@@ -5132,6 +5132,46 @@ test('--log-file writes the log even when the run returns early on a parse error
   });
 });
 
+// `M266` (`D1422`/`D1426`/`D1428`) — a secret only one env requires. The three commands that read the
+// declarations each answer for the selected env: `run` under another env neither needs nor asks for
+// it, `run --env staging` refuses before its first request and names the env, and `check`'s note
+// counts the selected env's set — so the note and the refusal still cannot disagree.
+test('a secret only `env staging` requires: local runs without it, staging is refused naming the env, and `check` counts per env', async () => {
+  await withFixtureServer(async (baseUrl) => {
+    const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-per-env-secret-'));
+    try {
+      await writeFile(
+        join(dir, 'tflw.config'),
+        `env staging\n  api "${baseUrl}"\n  require env STG_TOKEN\n  header "Authorization" is env(STG_TOKEN)\n\nenv local default\n  api "${baseUrl}"\n`,
+        'utf8',
+      );
+      await writeFile(join(dir, 'health.tflw'), 'test "health check"\n  api GET /health\n  expect status equals 200\n', 'utf8');
+      const env = envWithout('GITHUB_ACTIONS', 'STG_TOKEN', 'TFLW_ENV');
+
+      // `local`: the staging secret is nobody's business — the placeholder chapter 10 used to need.
+      const local = await execFileAsync('node', [cliEntry, 'run', '--no-color'], { cwd: dir, env });
+      assert.match(local.stdout, /1\/1 passed/);
+
+      const refused = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--env', 'staging'], { cwd: dir, env }).then(
+        () => undefined,
+        (e: unknown) => e as { code?: number; stderr?: string },
+      );
+      assert.equal(refused?.code, 2);
+      assert.match(refused?.stderr ?? '', /missing required environment variable: STG_TOKEN \(required by env staging\)/);
+
+      const checkStaging = await execFileAsync('node', [cliEntry, 'check', '--no-color', '--env', 'staging'], { cwd: dir, env });
+      assert.match(checkStaging.stdout, /ℹ require env: 1 of 1 not set here \(STG_TOKEN\)/);
+      const checkLocal = await execFileAsync('node', [cliEntry, 'check', '--no-color'], { cwd: dir, env });
+      assert.doesNotMatch(checkLocal.stdout, /require env:/, 'control: `local` requires nothing, so there is no note');
+
+      const set = await execFileAsync('node', [cliEntry, 'run', '--no-color', '--env', 'staging'], { cwd: dir, env: { ...env, STG_TOKEN: 's3cr3t' } });
+      assert.match(set.stdout, /1\/1 passed/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 test('--log-file mirrors stderr, so `error:` lines are in the log and not only on the terminal', async () => {
   await withFixtureServer(async (baseUrl) => {
     const dir = await mkdtemp(join(tmpdir(), 'tflw-e2e-log-stderr-'));

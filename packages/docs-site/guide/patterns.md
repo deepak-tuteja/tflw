@@ -58,6 +58,19 @@ session admin
   header "Authorization" is "Bearer {token}"
 ```
 
+A secret only one environment has — a staging API key the local service never asks for — is
+required by that environment's own block, so a local run does not need a placeholder for it:
+
+```tflw-config
+env local default
+  api "http://localhost:3000"
+
+env staging
+  api "https://staging.example.com"
+  require env STAGING_KEY
+  header "X-Api-Key" is env(STAGING_KEY)
+```
+
 A URL that differs by environment belongs in the config instead, as a base URL that names the
 variable overriding it — `api env API_BASE default "http://localhost:4001/v1"` — so every step
 moves with `--env`. Kept true by the sessions in the project's `tflw.config`, which every

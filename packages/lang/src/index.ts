@@ -108,6 +108,8 @@ export {
   checkAuthzAssertions,
   checkDeclaredEnvRefs,
   checkConfigDeclaredEnvRefs,
+  topLevelRequiredEnv,
+  requiredEnvByEnv,
   checkBracedEnvRefs,
   checkConfigBracedEnvRefs,
   checkCodeFlowSessions,

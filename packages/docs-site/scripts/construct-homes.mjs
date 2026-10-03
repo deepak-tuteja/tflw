@@ -146,6 +146,7 @@ export const CONSTRUCT_HOMES = new Map(Object.entries({
   // `M246` — a signer is a credential, taught beside the session that can carry it.
   'config:directive:signer': ['signed-requests'],
   'config:directive:session': ['sessions'],
+  'config:key:require': ['config'], //           `M266`: the same directive inside an `env` block
   'config:key:header': ['config'], 'config:key:timeout': ['config'],
   'config:key:workers': ['config'], 'config:key:web': ['config'], 'config:key:api': ['config'],
   'config:key:insecure': ['config'], 'config:key:cert': ['config'], 'config:key:key': ['config'],

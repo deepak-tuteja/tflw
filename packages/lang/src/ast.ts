@@ -1948,7 +1948,9 @@ export type ConfigEntry =
   | RedactDecl
   | ViewportDecl
   | LogDestinationDecl
-  | LogLevelDecl;
+  | LogLevelDecl
+  /** `M266` (`D1422`) — legal in an `env` block, where it is required only when that env runs. */
+  | RequireDecl;
 
 export interface HeaderDecl extends Node {
   readonly type: 'HeaderDecl';

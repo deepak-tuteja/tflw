@@ -30,11 +30,10 @@ shop, which wants a token on every request:
 ```sh runbook
 cat >> tflw.config <<'EOF'
 
-require env SHOP_TOKEN
-
 env staging
   api env STAGING_URL default "https://staging.coffee-shelf.example"
   web env STAGING_URL default "https://staging.coffee-shelf.example"
+  require env SHOP_TOKEN
   header "Authorization" is env(SHOP_TOKEN)
 EOF
 ```
@@ -43,7 +42,7 @@ EOF
 env resolves to without sending a request:
 
 ```sh runbook
-npx tflw doctor --env staging
+npx tflw doctor --env staging || echo "tflw exited $?"
 ```
 
 ```text runbook-output
@@ -53,35 +52,21 @@ services  api https://staging.coffee-shelf.example
 web       https://staging.coffee-shelf.example
 proxy     none set — requests go straight to each service
 tls       certificates verified; no client certificate
+secrets   SHOP_TOKEN (env staging only) — not set: SHOP_TOKEN
 suite     15 files, 41 tests, 19 in a browser
 browsers  playwright 1.58.0: chromium
 
-✓ nothing here stops a run
+✗ SHOP_TOKEN (required by env staging) is required by `require env` and not set — `tflw run` refuses before its first request; set it in your environment or a local .env file
+tflw exited 1
 ```
 
 ## Secrets
 
 `env(SHOP_TOKEN)` reads a secret from the environment, so it is never written in a file under
-review. `require env SHOP_TOKEN` says every run needs it, and is checked before anything is sent:
-a run without it stops and names what is missing. It sits at the top of the config, outside any
-`env` block, so it applies to every env, including `local`:
+review. `require env SHOP_TOKEN` inside the `staging` block says a staging run needs it. The local
+shop never sees that header, so `local` does not ask for it:
 
 ```sh runbook
-npx tflw run --tag functional || echo "tflw exited $?"
-```
-
-```text runbook-output
-error: missing required environment variable: SHOP_TOKEN
-  set it in your environment or a local .env file (see `require env` in tflw.config).
-tflw exited 2
-```
-
-On your machine, secrets go in a `.env` file in the project, one `NAME=value` per line. tflw reads
-it, and the `.gitignore` the example wrote keeps it out of git. The local shop ignores the header, so
-any value does here:
-
-```sh runbook
-echo "SHOP_TOKEN=local-only" > .env
 npx tflw run --tag functional
 ```
 
@@ -89,6 +74,36 @@ npx tflw run --tag functional
 …
 09:43:30.288 PASS 39/39 passed · env local · seed 3321 · now 2026-10-01T09:43:28.000Z · 2541 ms
 …
+```
+
+Under `staging` the secret is checked before anything is sent, so a run without it stops and says
+which env asked for it. Nothing reaches the staging address, which is why this works without one.
+One file is enough to see it:
+
+```sh runbook
+npx tflw run --env staging tests/catalogue.tflw || echo "tflw exited $?"
+```
+
+```text runbook-output
+error: missing required environment variable: SHOP_TOKEN (required by env staging)
+  set it in your environment or a local .env file (see `require env` in tflw.config).
+tflw exited 2
+```
+
+A secret every env needs goes on a `require env` line at the top of the config, outside any `env`
+block. A test can only read those top-level names, since a test runs under every env; `tflw check`
+says so if one reads a secret only `staging` requires.
+
+On your machine, secrets go in a `.env` file in the project, one `NAME=value` per line. tflw reads
+it, and the `.gitignore` the example wrote keeps it out of git:
+
+```sh runbook
+echo "SHOP_TOKEN=paste-the-staging-token-here" > .env
+npx tflw doctor --env staging | grep secrets
+```
+
+```text runbook-output
+secrets   SHOP_TOKEN (env staging only) — all set
 ```
 
 In CI, set secrets as the CI system's secrets, never in the workflow file. Wherever a value read

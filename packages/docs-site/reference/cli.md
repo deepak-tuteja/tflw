@@ -392,10 +392,11 @@ for a usage problem. See [splitting a suite across CI jobs](/guide/ci-and-report
 What this machine and this project will run with, on one screen: tflw and Node versions, the env
 and every `api` base it resolves to, the proxy variables and whether anything reads them, TLS
 (certificate verification, a client certificate and whether it is on disk), the suite's size and
-how much of it drives a browser, and which Playwright browsers are downloaded. **Read-only and
-offline** — it resolves the config and asks Playwright where its browsers are; it sends no request.
-Exits 1 only for what stops every run: no `tflw.config`, Node older than 22, or browser tests with
-no browser installed. See [installing tflw](/runbook/install).
+how much of it drives a browser, which Playwright browsers are downloaded, and the secrets the env
+requires — by name, and whether each is set, never the value. **Read-only and offline** — it
+resolves the config (with the project's `.env`, as `run` does) and asks Playwright where its
+browsers are; it sends no request. Exits 1 only for what stops every run: no `tflw.config`, Node
+older than 22, browser tests with no browser installed, or a required secret not set. See [installing tflw](/runbook/install).
 
 ## `tflw ui [dir]`
 

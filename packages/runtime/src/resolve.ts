@@ -2,7 +2,7 @@
 // active-env selection (P#28), defaults+env merge, per-service base URLs (P#29).
 
 import type { ConfigFile, EnvBlock, EvidenceLevel, LogDestination, LogLevel, RedactPattern, TeardownLevel, TimeoutTarget } from '@tflw/lang';
-import { DEFAULT_HELPER_DIRS, DEFAULT_RUNS_KEPT } from '@tflw/lang';
+import { DEFAULT_HELPER_DIRS, DEFAULT_RUNS_KEPT, requiredEnvByEnv as declaredByEnv } from '@tflw/lang';
 import { DEFAULT_TIMEOUTS, type AuthorizedTarget, type ResolvedConfig, type ResolvedHeader } from './types.js';
 
 export class ConfigError extends Error {
@@ -193,6 +193,10 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
   const mtls = certPath !== null && keyPath !== null ? { certPath, keyPath } : null;
 
   const requiredEnv = config.requires.flatMap((r) => r.names);
+  // `M266` (`D1422`/`D1426`) — the selected env's own lines join the top level's for the gate. The
+  // line above stays the top level alone: it is what a test file is checked against (`D1425`).
+  const requiredEnvByEnv = declaredByEnv(config);
+  const requiredHere = [...new Set([...requiredEnv, ...(requiredEnvByEnv[env.name] ?? [])])];
   const exclude = config.excludes.flatMap((e) => e.paths.map((p) => p.value));
   // `D1319` — declared directories as written, else the two defaults. The SAME array object as
   // `DEFAULT_HELPER_DIRS` when defaulted, which is how the checker's hint knows to say so.
@@ -235,7 +239,9 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
     reportDir,
     workers,
     insecure,
-    requiredEnv,
+    requiredEnv: requiredHere,
+    requiredEnvEveryEnv: requiredEnv,
+    requiredEnvByEnv,
     exclude,
     helpers,
     runsKeep,
@@ -269,6 +275,20 @@ export function resolveConfig(config: ConfigFile, env: EnvBlock, environ: NodeJS
 /** Names in `require env …` that are absent from `process.env`. One error should list them all. */
 export function missingRequiredEnv(config: ResolvedConfig, environ: NodeJS.ProcessEnv): string[] {
   return config.requiredEnv.filter((name) => environ[name] === undefined || environ[name] === '');
+}
+
+/** Every name any `require env` line declares, under any env (`M266`, `D1427`) — what the redactor
+ *  pre-registers. A production token set in a staging run's shell is masked too: wider is the safe
+ *  direction for a redactor, and a name nothing reads costs nothing to register. */
+export function declaredEnvNames(config: ResolvedConfig): string[] {
+  return [...new Set([...config.requiredEnv, ...config.requiredEnvEveryEnv, ...Object.values(config.requiredEnvByEnv).flat()])];
+}
+
+/** `(required by env staging)` for a name only the selected env requires (`D1426`), else `''` — so
+ *  the startup refusal says which line to look at when the shell is missing something only one env
+ *  needs. */
+export function requiredBy(config: ResolvedConfig, name: string): string {
+  return config.requiredEnvEveryEnv.includes(name) ? '' : ` (required by env ${config.envName})`;
 }
 
 function trimSlash(url: string): string {

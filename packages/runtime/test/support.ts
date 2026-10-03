@@ -113,6 +113,8 @@ export function testConfig(baseUrl: string, timeouts: Partial<ResolvedTimeouts> 
     workers: 1,
     insecure,
     requiredEnv: [],
+    requiredEnvEveryEnv: [],
+    requiredEnvByEnv: {},
     exclude: [],
     sessions: new Map(),
     // `M173d3` — `M147d`/`D642` added this and the fixture never gained it, so **every runtime test
