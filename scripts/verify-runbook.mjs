@@ -217,7 +217,14 @@ export async function runWalkthrough(chapters, { tgz, keep = false, show = false
   writeFileSync(join(state, 'bg'), '');
   const workDirs = [work, work.replace(/^\/private\//, '/'), scratch];
   const port = await freePort();
-  const env = readerEnv({ TFLW_TGZ: tgz, SHOP_URL: `http://127.0.0.1:${port}`, HOME: process.env.HOME ?? scratch });
+  // `M268`: the reader's browser cache starts EMPTY, as a new machine's does. With the shared one
+  // (`~/.cache/ms-playwright`), the walkthrough's `npx tflw install-browsers` found its Chromium
+  // already there and downloaded nothing, so the gate never showed that step works; and the day
+  // the workspace's Playwright matched the version a fresh `npm install` resolves, `tflw doctor`
+  // listed the Firefox the suite's own setup had installed — `chromium, firefox` against the
+  // page's `chromium`. A browser no reader has is not a page defect, and normalising the line away
+  // would hide the one a reader does have.
+  const env = readerEnv({ TFLW_TGZ: tgz, SHOP_URL: `http://127.0.0.1:${port}`, HOME: process.env.HOME ?? scratch, PLAYWRIGHT_BROWSERS_PATH: join(scratch, 'browsers') });
   const failures = [];
   let ran = 0;
   try {
