@@ -134,7 +134,7 @@ const CITATIONS = [
 ];
 
 // Only consulted by the fallback walk; `git ls-files` already excludes all of these.
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'coverage', 'report', 'runs', '.vitepress']);
+const SKIP_DIRS = new Set(['.git', 'node_modules', 'dist', 'coverage', 'report', 'runs', '.astro']);
 
 function walk(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

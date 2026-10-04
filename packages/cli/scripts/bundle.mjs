@@ -202,9 +202,10 @@ await reportWarnings('dist/mtls-worker.cjs', workerBuild);
 // `{ inputs }` shape esbuild emits) which is read into the union and then removed — it was never
 // something to serve. Run as a subprocess rather than imported, so that this script stays a
 // plain esbuild build and Vite's own config stays where Vite expects it.
-// Vite is resolved FROM the ui package, not from the repo root: the root `node_modules/vite` is
-// VitePress's 5.x and the page builds on 8.x, nested under `packages/ui/node_modules` — the first
-// run on the box resolved the wrong one and failed inside rollup, which 8.x does not even use.
+// Vite is resolved FROM the ui package, not from the repo root: until `M269` the root
+// `node_modules/vite` was VitePress's 5.x while the page builds on 8.x — the first run on the box
+// resolved the wrong one and failed inside rollup, which 8.x does not even use. The docs site is on
+// the same major now, and resolving from the package that declares it stays the right question.
 const uiRoot = fileURLToPath(new URL('../../ui/', import.meta.url));
 const viteManifestPath = createRequire(uiRoot).resolve('vite/package.json');
 const viteBin = join(dirname(viteManifestPath), JSON.parse(readFileSync(viteManifestPath, 'utf8')).bin.vite);

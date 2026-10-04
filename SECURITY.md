@@ -65,7 +65,8 @@ runs is compiled into its bundle. So CI audits the bundles, not a dependency tre
 and pull request it reads the packages each bundle inlined from the build's own metafile, at the
 version that was inlined, and fails on any moderate-or-worse advisory against them. It publishes
 the same list as a CycloneDX SBOM (the `sbom` artefact), which therefore names what a `tflw`
-install and the `.vsix` actually carry. Dependabot opens a weekly grouped pull request for npm and
+install and the `.vsix` actually carry. The whole workspace, development dependencies included, is
+also audited on every push, and fails on any high-or-worse advisory. Dependabot opens a weekly grouped pull request for npm and
 for GitHub Actions, and raises an alert for any advisory anywhere in the repository's tree. Once a
 week a scheduled job also asks the registry whether any locked package has been deprecated by its
 author, which neither the audit nor Dependabot reports. An advisory is fixed by moving to a version

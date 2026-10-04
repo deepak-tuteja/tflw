@@ -10341,6 +10341,14 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 | --- | --- |
 | D1438 | **Still out of scope, by decision:** network reachability (`D1370`'s reason stands: a doctor that sends requests is a test run with a different exit code, wrong exactly when the network is the problem); a `--fix` mode (each problem already ends in its remedy, and a read-only command stays read-only); launching a browser to prove it starts (deferred: a downloaded engine can still lack host libraries on Linux, but proving it costs seconds and no user has reported it); comparing the running `tflw` with the project's installed copy (deferred to publish, since nothing is on npm). |
 
+### D1441
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1441 | **Docs URLs do not change.** Starlight builds with `build.format: 'file'`, `trailingSlash: 'never'` and `base: '/tflw/'`, matching VitePress's `cleanUrls` output on GitHub Pages. A gate compares the old build's page list with the new build's and fails on any page added or lost that the migration did not intend. |
+
 ### D1447
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
@@ -10372,6 +10380,14 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 | id | decision |
 | --- | --- |
 | D1451 | **The sibling's audit fails at moderate.** Both of tflw-tests' audit steps (root and `apiV2`) move from `--audit-level=high` to `--audit-level=moderate`, once M268 has both trees at 0. apiV2 is an application the corpus runs against, so its whole tree is what runs; the same reasoning that holds tflw's shipped code to moderate holds it. |
+
+### D1454
+
+<sub>cited from tflw-tests/.github/dependabot.yml, tflw-tests/.github/workflows/ci.yml, tflw-tests/.github/workflows/deps-weekly.yml +3 more · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1454 | **Every lockfile the sibling holds is watched.** The CI audit step, the weekly deprecation scan and `dependabot.yml` each cover all five lockfiles (root, `apiV2`, `inventory-service`, `webV2`, `webV2/admin`), and a gate fails when a committed `package-lock.json` exists that any of the three does not name, so a sixth tree cannot be added unwatched. |
 
 ### M0
 
@@ -12011,7 +12027,7 @@ arity and a source path, but not a body — and the row filed it as a *when*, no
 
 ### M110b
 
-<sub>cited from SPEC.md, packages/docs-site/reference/cli.md, packages/docs-site/reference/diagnostics.md +2 more · lifted from `PROGRESS.md`</sub>
+<sub>cited from SPEC.md, packages/docs-site/src/content/docs/reference/cli.md, packages/docs-site/src/content/docs/reference/diagnostics.md +2 more · lifted from `PROGRESS.md`</sub>
 
 **`M110b` — every example in `SPEC.md`'s diagnostics table is executed.** The `Example` cell stopped being prose: it is generated from source that `packages/lang/test/diagnosticExamples.test.ts` runs through the same checker pass list `tflw check` runs, asserting both the code it emits and any output quoted after `→`. Four rows were wrong before it, `TF003` among them. `M110b-02` — the four docs-site CLI tables collapsing into one shared module — was filed here and closed later.
 
@@ -14355,7 +14371,7 @@ verifier already flags as possibly stale, and a row is a claim about a tree that
 
 ### M212
 
-<sub>cited from CHANGELOG.md, tflw-tests/CONSTRUCTS.md, tflw-tests/scripts/lib/constructs.mjs +3 more · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M212_COMPOSE_LEGIBLE.md`</sub>
 
 **`M212` — the API Compose pane, made legible; creating from the page; and what a mutation costs**
 
@@ -14598,7 +14614,7 @@ graded. **`M234-04` closed 2026-09-25 when slice `C` merged there** (tflw-tests#
 
 ### M239
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +15 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **§3 `M239` — the boundary: token, origin, confinement, helpers, process**
 
@@ -14607,7 +14623,7 @@ everything after it re-shoots and re-measures a page whose server should already
 
 ### M240
 
-<sub>cited from CHANGELOG.md, tflw-tests/scripts/lib/ui-budgets.mjs, tflw-tests/scripts/regression.mjs +6 more · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M240_FIRST_FIVE_MINUTES.md`</sub>
 
 **`M240` — the first five minutes: landing, copy, keyboard, a11y, the twelve bugs**
 
@@ -14631,7 +14647,7 @@ having a documented fallback it does not have.
 
 ### M242
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +16 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +2 more · lifted from `PLAN_M242_LANGUAGE.md`</sub>
 
 **`M242` — the language: matchers, skip, GraphQL, strings, shard, exporter, cookbook**
 
@@ -14685,7 +14701,7 @@ parked: it is a browser-to-API bridge and runs into `D10`, and it gets its own p
 
 ### M247
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +17 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +1 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§3 `M247` — the language joins its sessions to the browser**
 
@@ -14694,7 +14710,7 @@ docs. Sibling `T-1` waits on it.
 
 ### M248
 
-<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md +9 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, packages/lang/GRAMMAR.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§4 `M248` — a session that signs in through a browser**
 
@@ -14704,7 +14720,7 @@ listener, a browser and a token exchange in one declaration.
 
 ### M249
 
-<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/.github/workflows/ci.yml +7 more · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md · lifted from `PLAN_M247_WHOLE_PRODUCT.md`</sub>
 
 **§5 `M249` — the CLI and the reports remember**
 
@@ -14957,7 +14973,7 @@ never changes the exit code, and `--all-envs`, one verdict per env. Scoped 2026-
 
 ### M268
 
-<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +6 more · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
 
 **M268 — everything but the docs site's vite (both repositories)**
 
@@ -14966,5 +14982,29 @@ version that does not have it: lockfile updates, `@vscode/vsce` 4, and `apiV2` o
 gains an audit of the code the bundles actually ship, at moderate, and an SBOM written from that
 same list; both repositories gain a weekly deprecation scan, and the sibling's audit fails at
 moderate.
+
+### M268b
+
+<sub>cited from tflw-tests/CONTRIBUTING.md, tflw-tests/.github/dependabot.yml, tflw-tests/.github/workflows/ci.yml +5 more · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+**M268b — the sibling's other three lockfiles (tflw-tests)**
+
+Every advisory and deprecation in tflw-tests' three lockfiles that M268 did not measure —
+`inventory-service`, `webV2` and `webV2/admin` — is fixed by a version that does not have it:
+in-range lockfile updates in the two web trees, and `inventory-service` on NestJS 12 the way apiV2
+went. All five lockfiles are then audited at moderate in CI, scanned for deprecations weekly and
+watched by Dependabot, and a gate fails when a committed lockfile is missing from any of the three.
+
+### M269
+
+<sub>cited from CHANGELOG.md, CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+**PLAN_M268 / M269 — every reported advisory and deprecation, fixed at the root**
+
+Every advisory GitHub and `npm audit` report against tflw and tflw-tests, and every deprecated
+package a registry scan finds, is fixed by moving to a version that does not have it — no
+dismissals, no overrides. Two milestones: **M268** fixes everything except the docs site's vite, in
+both repositories; **M269** moves the docs site from VitePress to Astro Starlight, which removes the
+last vulnerable vite from the tree. Scoped 2026-10-04 by grilling (8 questions, §9).
 
 <!-- GENERATED:decisions:end -->

@@ -3,13 +3,13 @@
 // **This is a browser gate and it has to be**, which is worth stating because everything else in
 // this directory is a node test that reads files. `D1305`'s claim is that a reader can always get
 // out of the overlay — a press, `Escape`, or a scroll — and not one of those three is observable
-// from the source. Asserting that `theme/index.ts` contains the string `'Escape'` would assert that
+// from the source. Asserting that `MarkdownContent.astro` contains the string `'Escape'` would assert that
 // somebody typed it, which is `M164`'s *asserting a function is correct is not asserting anything
 // calls it*, and this file exists because that shape has already cost this repository three rounds.
 //
-// It drives the **built** site rather than a dev server: the listeners are installed by
-// `enhanceApp`, which only runs in the client bundle, so a gate against source would be testing a
-// file the reader never receives.
+// It drives the **built** site rather than a dev server: the listeners are installed by the
+// `<script>` in `src/components/MarkdownContent.astro`, which only runs in the client bundle, so a
+// gate against source would be testing a file the reader never receives.
 import assert from 'node:assert/strict';
 import { createReadStream, existsSync } from 'node:fs';
 import { createServer } from 'node:http';
@@ -18,7 +18,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
-const DIST = fileURLToPath(new URL('../.vitepress/dist', import.meta.url));
+const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2' };
 
 /** The built site is written for `base: '/tflw/'`, so it is served from that prefix or nothing resolves. */
@@ -26,7 +26,9 @@ const serve = async () => {
   const server = createServer((req, res) => {
     const path = decodeURIComponent((req.url ?? '/').split('?')[0]).replace(/^\/tflw/, '');
     let file = join(DIST, normalize(path).replace(/^(\.\.[/\\])+/, ''));
-    if (!existsSync(file) || extname(file) === '') file = join(file, 'index.html');
+    // GitHub Pages' rules, which the site is built for: `/x` is `x.html`, `/x/` is `x/index.html`.
+    if (extname(file) === '' && existsSync(`${file}.html`)) file = `${file}.html`;
+    else if (!existsSync(file) || extname(file) === '') file = join(file, 'index.html');
     if (!existsSync(file)) {
       res.writeHead(404).end('not here');
       return;
@@ -40,13 +42,13 @@ const serve = async () => {
 
 const openOnAShot = async (page, base) => {
   await page.goto(`${base}/ui/`);
-  const shot = page.locator('.vp-doc img').first();
+  const shot = page.locator('.sl-markdown-content img').first();
   await shot.waitFor({ state: 'attached' });
   // **The vacuity control, and it is not decoration.** Every clause below is about what happens
   // when a picture is pressed; on a page with no picture they would all pass over nothing, and the
   // gate would go green the day the shots stop being embedded — which is exactly the day it should
   // go red.
-  assert.ok(await page.locator('.vp-doc img').count() > 0, 'no picture on /ui/ — every clause here would pass over nothing');
+  assert.ok(await page.locator('.sl-markdown-content img').count() > 0, 'no picture on /ui/ — every clause here would pass over nothing');
   await shot.click({ force: true });
   await page.locator('.tflw-zoom').waitFor({ state: 'attached', timeout: 4000 });
   return shot;
@@ -110,7 +112,7 @@ test('`D1305`: only pictures in the document zoom — the logo and the chrome do
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`${base}/ui/`);
     // The control for the control: if the site has no chrome image, this test asserts nothing.
-    const chrome = await page.locator('.VPNavBarTitle img, img.logo').count();
+    const chrome = await page.locator('.site-title img').count();
     assert.ok(chrome > 0, 'no chrome image on the page — this clause would pass over nothing');
     // **Dispatched, not clicked, and that is the sharper instrument.** The logo ships as a
     // light/dark pair, so one of the two is always `display: none` and Playwright rightly refuses
@@ -118,7 +120,7 @@ test('`D1305`: only pictures in the document zoom — the logo and the chrome do
     // that a pointer can reach it — so the event is sent straight at it, bubbling, which is the
     // hardest version of the question.
     const opened = await page.evaluate(() => {
-      const img = document.querySelector('.VPNavBarTitle img, img.logo');
+      const img = document.querySelector('.site-title img');
       if (img === null) return 'no chrome image';
       img.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       return document.querySelectorAll('.tflw-zoom').length;

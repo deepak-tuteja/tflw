@@ -92,7 +92,7 @@ Spring `context-path`: **your `api` base's own path is not used twice.** A base 
 `https://host/v1` and a document describing `/v1/health` still send one `/v1`. Point `api` wherever
 your tests need it and the crawl will not double it.
 
-::: warning If the crawl reaches nothing, this is the first thing to check
+:::caution[If the crawl reaches nothing, this is the first thing to check]
 A crawl that sends requests and reaches none of them **fails** (`TF068`) rather than reporting a green
 run over responses it never judged. A wall of `404`s is nearly always an addressing disagreement —
 most often a document describing a prefix the host does not actually serve.
@@ -236,7 +236,7 @@ crawl "the surface, narrowed"
 **template** (`/products/{id}`), never against the filled-in path, so whether a route is excluded can
 never depend on the value synthesis happened to invent.
 
-::: tip This is not `tflw.config`'s `exclude`
+:::tip[This is not `tflw.config`'s `exclude`]
 The config directive of the same name matches file paths by exact equality, because it names files you
 have on disk and can spell. A crawl excludes from a set nobody has seen yet — the routes come out of a
 document your application generates — so it takes a glob.

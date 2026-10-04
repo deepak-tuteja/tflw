@@ -17,6 +17,16 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — the docs site runs on Starlight (M269)
+
+- **The documentation site is built with Astro Starlight instead of VitePress.** VitePress 1.x is
+  held to a vite release line with open advisories and no fix, and its successor is still an alpha.
+- **Every published URL still resolves**: the same 61 pages at the same addresses, and every
+  heading anchor with the id it had, held by a gate against a record of the last VitePress build.
+- **The pages read the same and gain Starlight's layout**: one rail per section, the top nav, a
+  table of contents beside each page, the light and dark themes in tflw's colours, and search
+  across every page. The playground and the editor demos are unchanged and still run live.
+
 ### Changed — `tflw doctor`'s ✓ means the run starts (M267)
 
 - **Doctor makes the checks `tflw run` makes** before its first request, through the same code: a

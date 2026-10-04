@@ -24,15 +24,15 @@ const PUBLIC = join(DOCS_SITE, 'public');
 
 /* ------------------------------------------------------------------ palette
    No new colors. These are the exact tokens already in
-   .vitepress/theme/custom.css — the mark reads the design system rather than
+   src/styles/custom.css — the mark reads the design system rather than
    introducing a parallel one. */
 
 export const PALETTE = {
-  light: { ink: '#1d1b16', rail: '#9c5f0c' }, // --vp-c-text-1 / --vp-c-brand-1, light
-  dark: { ink: '#f2f0ec', rail: '#f2a93b' }, //  --vp-c-text-1 / --vp-c-brand-1, dark
+  light: { ink: '#1d1b16', rail: '#9c5f0c' }, // --sl-color-white / --sl-color-accent, light
+  dark: { ink: '#f2f0ec', rail: '#f2a93b' }, //  --sl-color-white / --sl-color-accent, dark
 };
 
-/** The plate under every raster output. --vp-c-bg (dark), the site's documented primary
+/** The plate under every raster output. --sl-color-black (dark), the site's documented primary
  *  identity. A transparent PNG favicon goes invisible against a white tab strip, so the
  *  rasters bake a ground even though favicon.svg does not need one. */
 const PLATE = '#0a0a0b';
@@ -107,9 +107,9 @@ const attrs = (o) =>
 const open = (viewBox, extra = '') =>
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${viewBox}"${extra ? ' ' + extra : ''}>`;
 
-/** The wordmark in one fixed color pair — VitePress swaps two files rather than switching one,
- *  because its light/dark toggle is a manual class flip that a media query inside the SVG
- *  cannot see. */
+/** The wordmark in one fixed color pair — the site swaps two files rather than switching one,
+ *  because its light/dark toggle is an attribute on the page (`data-theme` on Starlight, a class on
+ *  VitePress before it) that a media query inside the SVG cannot see. */
 function wordmarkSvg({ ink, rail }) {
   const strokes = attrs({ fill: 'none', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' });
   return [
@@ -132,7 +132,7 @@ function wordmarkSvg({ ink, rail }) {
  * generated rather than copied: *"every consumer reads tokens"*. So this one emission paints
  * nothing. Its ink is `currentColor` — whatever the surrounding text is — and its rail is
  * `var(--accent)`, which is the token that exists for exactly the job the amber does on the docs
- * site (`D1286`). The two committed SVGs above keep their baked hexes, because VitePress swaps
+ * site (`D1286`). The two committed SVGs above keep their baked hexes, because the site swaps
  * two files and a file has no cascade to read from.
  *
  * **Why a component and not a ninth SVG file.** An `<img src="…svg">` is a separate document: it

@@ -527,7 +527,7 @@ const REGISTRY = [
     id: 'cli-reference-section',
     milestone: 'm110',
     pkg: '@tflw/docs-site',
-    file: 'packages/docs-site/reference/cli.md',
+    file: 'packages/docs-site/src/content/docs/reference/cli.md',
     what: 'the CLI reference loses its `tflw lsp` section — the state the page shipped in for eleven milestones',
     find: '## `tflw lsp`',
     replace: '## The language server',

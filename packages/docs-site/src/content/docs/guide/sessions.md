@@ -44,7 +44,7 @@ session "shopper": 2 cookies for shop.test* — with names and hosts, never valu
 their `HttpOnly`, `Secure` and `SameSite` flags, so the page's own script sees exactly what it
 would for a real signed-in visitor.
 
-::: warning Three limits
+:::caution[Three limits]
 - **Cookies only.** A session that signs in with a header — a bearer token, an API key — has
   nothing a browser can hold. The page opens signed out and the report says *carries headers
   only*. An app that keeps its token in `localStorage` still signs in through its form.
@@ -242,7 +242,7 @@ rather than as a mistake.
 When a session carries modifiers as well, the scope comes first: `session admin for env local oauth2
 privileged`.
 
-::: tip `env` here means an `env` block
+:::tip[`env` here means an `env` block]
 Not the operating-system variable that `require env` and `env(NAME)` read. tflw uses the word for
 both, and this clause follows `env <name>`, `--env` and `TFLW_ENV`.
 :::

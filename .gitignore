@@ -24,13 +24,13 @@ packages/vscode/.bundle-meta.json
 # `sbom` artefact. A build output, so never committed.
 /sbom.cdx.json
 
-# Regenerated from SPEC.md by packages/cli/scripts/gen-docs.mjs (pretest/predev/bundle) — never
+# Regenerated from the docs site's pages by packages/cli/scripts/gen-docs.mjs (pretest/predev/bundle) — never
 # hand-edited, so it isn't a source of truth worth committing.
 packages/cli/src/docs-data.generated.ts
 
-# VitePress build output/cache (packages/docs-site) — dist/ above already covers .vitepress/dist,
-# this adds the separate cache directory.
-**/.vitepress/cache
+# Astro's generated types and content cache (packages/docs-site) — dist/ above already covers the
+# build output.
+packages/docs-site/.astro/
 
 # Internal dev-tracking docs (decision log + build tracker) — not part of the public project
 PLAN.md

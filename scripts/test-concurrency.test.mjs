@@ -9,9 +9,10 @@
 // invocation. `npm test` on the same tree, unchanged, reported 3574 tests and zero failures.
 //
 // The cause is that four files in `packages/cli/test` each shell out to `npm run build` **at the
-// repo root** — the whole seven-workspace build, vitepress included — because what they assert is a
-// property of the shipped `packages/cli/dist/cli.cjs`. Run two of them at once and the root builds
-// race: on `.vitepress/.temp`, and on each other's `dist/`. The CLI suite then fails with
+// repo root** — the whole seven-workspace build, the docs site included — because what they assert
+// is a property of the shipped `packages/cli/dist/cli.cjs`. Run two of them at once and the root
+// builds race: on the docs site's build cache (VitePress's `.vitepress/.temp` then, Astro's `.astro/`
+// since `M269`), and on each other's `dist/`. The CLI suite then fails with
 // `ERR_MODULE_NOT_FOUND`, and — the expensive part — any other suite importing a `dist/` mid-rewrite
 // fails with assertion diffs that read exactly like product defects.
 //
@@ -72,7 +73,7 @@ test('packages/cli runs its tests one at a time, so those builds cannot race', (
     /--test-concurrency=1\b/,
     'packages/cli\'s `test` script has lost `--test-concurrency=1`. It is not a tuning knob: ' +
       `${rootBuildingTestFiles().join(', ')} each run \`npm run build\` at the repo root, and in parallel ` +
-      'those builds corrupt `.vitepress/.temp` and each other\'s `dist/`. The visible damage lands in OTHER ' +
+      'those builds corrupt the docs site\'s build cache and each other\'s `dist/`. The visible damage lands in OTHER ' +
       'packages, as assertion failures that look like product defects — 307 of them on 2026-08-22. ' +
       `Script is currently: ${JSON.stringify(script)}`,
   );

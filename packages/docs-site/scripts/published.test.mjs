@@ -4,7 +4,7 @@
 // `DECLARED_ROADMAP` already names each pre-1.0 sentence and why it is true today, and its header
 // calls the list a publish-time worklist. That worklist was a promise to edit thirteen sentences on
 // the day; this makes the edit happen now, reviewed and gated, so publish day is one flag
-// (`.vitepress/published.ts`). A site page's declared sentence must sit inside a
+// (`src/lib/published.ts`). A site page's declared sentence must sit inside a
 // `<Published :when="false">` block with a `<Published>` block after it on the same page — or, for
 // the home page's hero tagline, carry a `taglinePublished` twin in its frontmatter. The repository's
 // own files (`README.md`, `CHANGELOG.md`, `packages/…`) are read on GitHub, where no flag reaches,
@@ -16,7 +16,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { DECLARED_ROADMAP } from './doc-blocks.mjs';
 
-const ROOT = fileURLToPath(new URL('..', import.meta.url));
+const ROOT = fileURLToPath(new URL('../src/content/docs', import.meta.url));
+const SITE = fileURLToPath(new URL('..', import.meta.url));
 const isSitePage = (key) => !['README.md', 'CHANGELOG.md'].includes(key) && !key.startsWith('packages/');
 
 /** Where `includes` sits on `page`: inside a pre-1.0 block with a published twin, in the hero tagline with a twin, or neither. */
@@ -43,7 +44,7 @@ test('every pre-1.0 sentence a site page declares is behind the PUBLISHED flag, 
 });
 
 test('the flag is false until the owner\'s word (D1379)', () => {
-  const src = readFileSync(join(ROOT, '.vitepress', 'published.ts'), 'utf8');
+  const src = readFileSync(join(SITE, 'src', 'lib', 'published.ts'), 'utf8');
   assert.match(src, /^export const PUBLISHED = false;$/m, 'flipping this is publish day\'s step 5, not a code change');
 });
 

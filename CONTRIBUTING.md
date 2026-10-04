@@ -65,6 +65,7 @@ npm run build
 npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
+npm audit --audit-level=high
 npm run verify:bundle-advisories
 npm run verify:bundle-advisories:self-test
 npm run verify:sbom
@@ -118,6 +119,9 @@ npm run verify:ledger                  # § never runs in CI, by decision
   401 without the token — so a route added tomorrow joins the walk that day — and `ui-headers.test.ts`
   grades the served page with tflw's own `sec/*` rules. A change to `ui-server.ts` that loosens
   either is a red in the suite, not a review comment.
+- **`npm audit --audit-level=high`** — no high-or-worse advisory anywhere in the workspace, dev
+  dependencies included (`M269`, `D1447`). The gate below holds what ships to moderate; this holds
+  what a contributor installs. It reads the lockfile against the registry, so no install is needed.
 - **`npm run verify:bundle-advisories`** — no third-party package compiled into what tflw ships has
   a known moderate-or-worse advisory (`M268`, `D1447`). The CLI and the extension declare no runtime
   `dependencies`: esbuild inlines them, so the shipped set is read off each bundle's metafile (the
@@ -257,12 +261,15 @@ npm run verify:ledger                  # § never runs in CI, by decision
   `node scripts/refresh-spec-anchors.mjs --ref <branch>` — after pushing the branch, since GitHub
   can only render a ref it has. That refresh needs the network and an authenticated `gh`; only the
   comparison runs in CI.
-- **`npm run test:links -w @tflw/docs-site`** — every internal docs anchor resolves and every page
-  renders the sidebar it belongs to. Separate from `npm test` because it reads the **built**
-  `.vitepress/dist`, so it needs `npm run build` first. This is the gate the ledger row that
+- **`npm run test:links -w @tflw/docs-site`** — every internal docs anchor resolves, every page
+  renders the sidebar it belongs to, and every URL the site has published — each page and each
+  heading id on it — still resolves (`M269`, `D1441`; the record is
+  `packages/docs-site/scripts/fixtures/published-urls.json`, and `--write` re-records it when a page
+  or heading is meant to go). Separate from `npm test` because it reads the **built**
+  `packages/docs-site/dist`, so it needs `npm run build` first. This is the gate the ledger row that
   produced this file forgot to list.
 - **`npm run verify:runbook:self-test`** and **`xvfb-run -a npm run verify:runbook`** — **† conditional.**
-  The walkthrough under `docs-site/runbook/start/` is run as a reader runs it: every ` ```sh runbook `
+  The walkthrough under `docs-site/src/content/docs/runbook/start/` is run as a reader runs it: every ` ```sh runbook `
   fence, in chapter order, in one fresh directory, against the CLI packed from this tree, with each
   ` ```text runbook-output ` fence compared to what the command printed. Needs `npm run build` first,
   the network (it installs `playwright` the way chapter 1 says to) and a display. The self-test's
@@ -447,8 +454,8 @@ npm run verify:ledger                  # § never runs in CI, by decision
 ## Run the suite with `npm test`, not package by package
 
 **Four of `packages/cli`'s test files — `e2e`, `watch`, `pick` and `lsp` — each shell out to
-`npm run build` at the repo root.** Not a workspace build: the whole seven-workspace one, vitepress
-included. They have to, because what they assert is a property of the shipped
+`npm run build` at the repo root.** Not a workspace build: the whole seven-workspace one, the docs
+site included. They have to, because what they assert is a property of the shipped
 `packages/cli/dist/cli.cjs`, and building it is how it comes to exist.
 
 The only thing stopping those four from doing it *simultaneously* is `--test-concurrency=1` in that
@@ -461,8 +468,9 @@ package's `test` script. It is load-bearing and it does not look it, so:
   both sequential on purpose.
 
 **What it looks like when this goes wrong**, because it has: concurrent root builds race on the
-shared `.vitepress/.temp` directory and each other's `dist/`. You get `ERR_MODULE_NOT_FOUND` on
-`.vitepress/.temp/guide_*.md.js`, and — the expensive part — `@tflw/runtime` and `@tflw/lsp-server`
+docs site's build cache and each other's `dist/`. When the site was VitePress you got
+`ERR_MODULE_NOT_FOUND` on `.vitepress/.temp/guide_*.md.js`; whatever the generator, the expensive
+part is the same — `@tflw/runtime` and `@tflw/lsp-server`
 start failing with deep-equal diffs and reads of `undefined`, because they are importing a `dist/`
 that is being rewritten underneath them. Those read exactly like product defects and are not.
 
@@ -550,13 +558,14 @@ stale one, which is the failure mode this whole document was written to end.
 > result: `npm test -w @tflw/docs-site` and `npm run test:links -w @tflw/docs-site` fail on every
 > mistake below, which is why these are traps rather than rules.
 
-- **Read a heading id out of the built HTML. Never derive it from the heading text.** VitePress's
-  slugifier is not the one you would write: it **keeps `—`** and **drops `…`**, so
+- **Read a heading id out of the built HTML. Never derive it from the heading text.** The site's
+  slugifier (VitePress's, kept on Starlight by `src/lib/slug.mjs` so no published anchor moved) is
+  not the one you would write: it **keeps `—`** and **drops `…`**, so
   `## Scaling across processes — \`--workers N\`` becomes `#scaling-across-processes-—-workers-n`,
   and `## \`csrf from … send as header\` — a token that travels with the credential` drops the
   ellipsis and keeps the dash. Deriving one by eye failed **four times across `M149c`–`M149e`**,
   every time in the same confident direction. `npm run build -w @tflw/docs-site` then
-  `grep -o 'id="[^"]*"' .vitepress/dist/guide/<page>.html` answers it in one command.
+  `grep -o 'id="[^"]*"' packages/docs-site/dist/guide/<page>.html` answers it in one command.
 - **A shipped construct needs a page, and it is matched on its syntax, not its name.**
   `verify-docs.mjs` takes the set difference between `specConstructs()` — one manifest, all 178
   constructs, less the 66 diagnostics `diagnosticsCoverage.test.ts` already holds (`D790`/`D791`) —

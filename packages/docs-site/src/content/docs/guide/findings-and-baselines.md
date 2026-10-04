@@ -72,7 +72,7 @@ not something anyone will ever review.
 **Delete a line to un-accept it.** That is the workflow — fix an endpoint, delete its entry, and the
 build now protects the fix.
 
-::: tip Stale entries are reported, never removed
+:::tip[Stale entries are reported, never removed]
 If a baseline lists a fingerprint this run did not produce, tflw says so and leaves the file alone. It
 does not prune, because a `--tag smoke` run legitimately produces a subset of the suite's findings —
 auto-pruning would quietly delete acceptances the next full run still needs.
@@ -155,7 +155,7 @@ with no `accepted` array, one already listing this fingerprint — the document 
 **unchanged** and the editor still opens on it. A feature whose every failure mode makes a build
 *greener* should show you the file rather than repair it.
 
-::: tip The Config tab holds more than `tflw.config`
+:::tip[The Config tab holds more than `tflw.config`]
 Once a config declares `baseline`, that tab gains a switcher: `tflw.config` first, then one entry
 per declared document, labelled with its path and the block declaring it. Each is a plain editor
 over the bytes on disk, and each has its own address, so the link to an accepted finding's line
@@ -234,7 +234,7 @@ self-liquidating: anything it finds twice should stop being seeded. The trade is
 naming — a real weakness found only this way does not fail CI until somebody promotes it. A finding
 you have to read is still better than a gate you cannot trust.
 
-::: warning It is not free
+:::caution[It is not free]
 Probes are strictly sequential, one in flight. `--probe-seeded 8` against a request with three
 mutable sites and all four classes granted is a few hundred extra requests on **one assertion**. The
 per-class ceiling is 64, and past that the honest answer is a narrower `--tag` run rather than a

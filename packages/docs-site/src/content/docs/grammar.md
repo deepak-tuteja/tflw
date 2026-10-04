@@ -10,4 +10,4 @@ The formal EBNF-ish grammar reference, straight from
 language front-end itself is documented against. That file's own currency is enforced separately, by
 a test asserting every keyword the parser recognizes has a production in it.
 
-<!--@include: ../lang/GRAMMAR.md-->
+<!--@include: ../../../../lang/GRAMMAR.md-->

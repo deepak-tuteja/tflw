@@ -1,0 +1,41 @@
+---
+// `M269` (`D1443`) — the top nav, which Starlight's header does not have. It names *surfaces*, not
+// chapters (`src/sidebar.mjs`'s `NAV`), and it is how a reader moves between the sections whose
+// rails `src/route-data.ts` keeps apart. It sits in the slot Starlight gives the social links, so
+// the same list also appears in the mobile menu's footer, where that slot is drawn too.
+import Default from '@astrojs/starlight/components/SocialIcons.astro';
+import { NAV } from '../sidebar.mjs';
+
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const here = Astro.url.pathname;
+const href = (link: string) => `${base}${link}`;
+const current = (link: string) => {
+  const section = link.replace(/^(\/[^/]+\/).*$/, '$1');
+  return here === href(link) || (section.endsWith('/') && here.startsWith(href(section)));
+};
+---
+
+<nav class="tflw-nav" aria-label="Sections">
+  {NAV.map((item) => (
+    <a href={href(item.link)} aria-current={current(item.link) ? 'page' : undefined}>{item.text}</a>
+  ))}
+</nav>
+<Default />
+
+<style>
+  .tflw-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1rem;
+    font-size: var(--sl-text-sm);
+  }
+  .tflw-nav a {
+    color: var(--sl-color-gray-2);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .tflw-nav a:hover,
+  .tflw-nav a[aria-current='page'] {
+    color: var(--sl-color-text-accent);
+  }
+</style>

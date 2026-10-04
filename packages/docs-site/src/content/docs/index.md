@@ -1,25 +1,22 @@
 ---
-layout: home
-
+title: tflw
+template: splash
 hero:
-  name: tflw
-  text: Test <span class="hero-accent">APIs and browsers</span> in one language.
+  title: Test <span class="hero-accent">APIs and browsers</span> in one language.
   tagline: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Four pillars share one grammar — API, browser, load (validated against k6 on real contended workloads) and security scanning. Pre-1.0, not yet published.
-  taglinePublished: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Four pillars share one grammar — API, browser, load (validated against k6 on real contended workloads) and security scanning.
   actions:
-    - theme: brand
-      text: Get started
+    - text: Get started
       link: /getting-started
-    - theme: alt
-      text: Guide
+    - text: Guide
       link: /guide/first-test
-    - theme: alt
-      text: See the UI
+      variant: secondary
+    - text: See the UI
       link: /ui/
-    - theme: alt
-      text: Try it in your browser
+      variant: secondary
+    - text: Try it in your browser
       link: /playground
-
+      variant: secondary
+taglinePublished: Reports first, syntax second — a self-contained report.html, junit.xml, and teaching-quality diagnostics fall out of every run, no glue code between tools. Four pillars share one grammar — API, browser, load (validated against k6 on real contended workloads) and security scanning.
 features:
   - title: Reporting-first runtime
     details: Every step is an event by construction — a self-contained report.html (full request/response detail), junit.xml, and results.json all fall out of the same event stream tflw run already emits, secrets redacted everywhere automatically.

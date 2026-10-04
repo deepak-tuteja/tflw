@@ -1,0 +1,26 @@
+---
+// `M269` — the page's title, as its `# H1` wrote it, carrying the id VitePress gave that H1.
+// `content.config.ts` lifts the H1 into `title` (plain words, for `<title>` and the sidebar) and
+// `titleSource` (as written); a title with inline code — `` `if` `` — is drawn as code, through the
+// same escaping `code()` the reference tables use.
+import { vitepressSlug } from '../lib/slug.mjs';
+import { code } from '../lib/mdCode.ts';
+
+const { title, titleSource } = Astro.locals.starlightRoute.entry.data;
+// Starlight's own id for the title, which its table of contents links as "Overview".
+const PAGE_TITLE_ID = '_top';
+// The id VitePress gave this H1 (`D1441`), so a link to `page#title` still lands on the title.
+const legacyId = vitepressSlug(title);
+---
+
+<h1 id={PAGE_TITLE_ID} set:html={`<span id="${legacyId}"></span>${code(titleSource ?? title)}`} />
+
+<style>
+  h1 {
+    margin-top: 1rem;
+    font-size: var(--sl-text-h1);
+    line-height: var(--sl-line-height-headings);
+    font-weight: 600;
+    color: var(--sl-color-white);
+  }
+</style>
