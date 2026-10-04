@@ -8202,7 +8202,7 @@ by asking what the `D683` tier would do in the new home, which is the question t
 
 ### D922
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M179_SIBLING_PIN_DURABILITY.md`</sub>
 
 **`D922` — a reachability probe asks for the capability it gates, and nothing else.**
 `verify-sibling-pin.mjs` decided whether its network tier could run by calling `gh api user --jq
@@ -10349,6 +10349,14 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 | --- | --- |
 | D1447 | **CI audits what ships, and the whole tree at high.** (a) A new gate takes the third-party packages esbuild inlined into every bundle the tarball and the `.vsix` carry, from the same metafiles `collectNotices` reads, at their locked versions, and asks the registry's bulk advisory endpoint about exactly those; it fails on **moderate or worse**. (b) `npm audit --audit-level=high` runs over the whole workspace, dev dependencies included. The `--omit=dev` step and its comment go: they audit a tree no user installs. (a) lands in M268; (b) lands with M269's cutover, since before it the vite advisory is red by known cause. |
 
+### D1448
+
+<sub>cited from tflw-tests/.github/workflows/deps-weekly.yml, tflw-tests/scripts/deprecations-allowlist.json, tflw-tests/scripts/verify-contributing.mjs +1 more · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1448 | **A weekly deprecation scan in both repositories.** A committed `verify:deprecations` reads every `name@version` in each lockfile against the registry's `deprecated` field and fails on any not in an allowlist; each allowlist entry carries a written reason, and the list starts empty. It runs on a Monday schedule and by hand (`workflow_dispatch`), never per pull request: ~1,200 lookups, and an upstream deprecation must not block an unrelated change. |
+
 ### D1450
 
 <sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
@@ -10356,6 +10364,14 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 | id | decision |
 | --- | --- |
 | D1450 | **The SBOM lists what ships.** The `sbom` artefact is generated from the same bundle list D1447a audits — each package esbuild inlined into the tarball's and the `.vsix`'s bundles, with its version, licence and package URL — as CycloneDX, plus the tarball's declared peers marked optional. `npm sbom --omit=dev` is removed: it describes a tree no user installs and omits the code they run. A gate holds the SBOM's component set equal to the bundle list, so the two cannot drift. |
+
+### D1451
+
+<sub>cited from tflw-tests/.github/workflows/ci.yml, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1451 | **The sibling's audit fails at moderate.** Both of tflw-tests' audit steps (root and `apiV2`) move from `--audit-level=high` to `--audit-level=moderate`, once M268 has both trees at 0. apiV2 is an application the corpus runs against, so its whole tree is what runs; the same reasoning that holds tflw's shipped code to moderate holds it. |
 
 ### M0
 
@@ -14941,7 +14957,7 @@ never changes the exit code, and `--all-envs`, one verdict per env. Scoped 2026-
 
 ### M268
 
-<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+<sub>cited from CONTRIBUTING.md, tflw-tests/CONTRIBUTING.md, tflw-tests/.github/workflows/ci.yml +4 more · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
 
 **M268 — everything but the docs site's vite (both repositories)**
 
