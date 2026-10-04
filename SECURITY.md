@@ -60,11 +60,14 @@ but is triaged after those.
 
 ## Dependencies
 
-CI runs `npm audit --audit-level=high --omit=dev` on every push and pull request — the dependency
-tree a `tflw` install carries, which is the one a user runs — publishes a CycloneDX SBOM of
-that same tree as a build artefact, and Dependabot opens a weekly grouped pull request for npm
-and for GitHub Actions. The development tree (the bundler, the docs site's generator, the test
-runners) is not gated: its advisories are Dependabot alerts on the repository, read by hand, and
-the day this was written all four open ones were about a development server nothing here runs
-reachably. A dependency advisory that affects a shipped path is handled like any other report
-above.
+Neither the CLI nor the extension declares runtime `dependencies`: the third-party code each one
+runs is compiled into its bundle. So CI audits the bundles, not a dependency tree: on every push
+and pull request it reads the packages each bundle inlined from the build's own metafile, at the
+version that was inlined, and fails on any moderate-or-worse advisory against them. It publishes
+the same list as a CycloneDX SBOM (the `sbom` artefact), which therefore names what a `tflw`
+install and the `.vsix` actually carry. Dependabot opens a weekly grouped pull request for npm and
+for GitHub Actions, and raises an alert for any advisory anywhere in the repository's tree. Once a
+week a scheduled job also asks the registry whether any locked package has been deprecated by its
+author, which neither the audit nor Dependabot reports. An advisory is fixed by moving to a version
+without it — not by an `overrides` entry and not by dismissing the alert. A dependency advisory
+that affects a shipped path is handled like any other report above.

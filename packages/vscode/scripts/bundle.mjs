@@ -39,7 +39,8 @@ const notices = collectNotices(extensionBuild.metafile);
 writeFileSync(new URL('../THIRD-PARTY-NOTICES.md', import.meta.url), renderNotices(pkg.name, notices), 'utf8');
 writeFileSync(
   new URL('../.bundle-meta.json', import.meta.url),
-  JSON.stringify({ inputs: extensionBuild.metafile.inputs }),
+  // `bundles`: which output inlined which input, read by `scripts/shipped-packages.mjs` (`M268`).
+  JSON.stringify({ inputs: extensionBuild.metafile.inputs, bundles: { 'dist/extension.cjs': Object.keys(extensionBuild.metafile.inputs) } }),
   'utf8',
 );
 

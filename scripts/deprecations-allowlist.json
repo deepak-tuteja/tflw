@@ -1,0 +1,4 @@
+{
+  "//": "M268 D1448 — deprecated packages kept on purpose, each as { \"package\": \"name@version\", \"reason\": \"…\" }. Read by scripts/verify-deprecations.mjs; an entry with no reason, or one that no longer matches anything deprecated, fails the scan. Starts empty.",
+  "entries": []
+}
