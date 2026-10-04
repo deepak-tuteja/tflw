@@ -79,6 +79,13 @@
   pointer-events: none;
 }
 
+/* The dot field runs half a viewport past each edge of the hero, so the panel that holds it clips
+   it. VitePress's hero container did this; Starlight's does not, and the home page scrolled 540px
+   sideways at every width. `clip`, not `hidden`: it makes no scroll container. */
+.content-panel:has(.tflw-hero) {
+  overflow-x: clip;
+}
+
 .tflw-hero-copy {
   display: flex;
   flex-direction: column;
@@ -268,11 +275,22 @@
   border-radius: 4px;
 }
 
-@media (min-width: 80rem) {
+/* On Starlight the text column sits at the far end of its pane, one pad short of the "On this page"
+   rail, at every width (VitePress centred it). So a shot can only grow towards the sidebar, and only
+   into what the pane has left: the pane is the container, and the shot is the column's width plus up
+   to 160px, never more than the pane minus its pads. At 1440 that is a few pixels; at 1920 the whole
+   160. The VitePress rule — 80px out on each side — crossed the rail at every width and the sidebar
+   below 1600. */
+@media (min-width: 72rem) {
+  :root:has(.ui-shots) .main-pane {
+    container-type: inline-size;
+  }
+
   .ui-shots .sl-markdown-content img {
-    width: calc(100% + 160px);
+    --shot-width: max(100%, min(100% + 160px, 100cqi - 2 * var(--sl-content-pad-x)));
+    width: var(--shot-width);
     max-width: none;
-    margin-inline-start: -80px;
+    margin-inline-start: calc(100% - var(--shot-width));
   }
 }
 
