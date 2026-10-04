@@ -9411,7 +9411,7 @@ stored default.
 
 ### D1320
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, tflw-tests/scripts/verify-contributing.mjs · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **`D1320` — the process: a policy, an audit, an SBOM, and a bot that opens pull requests.** `SECURITY.md` at both roots with GitHub private vulnerability reporting and a 72-hour acknowledgement; a `supply-chain` CI job running `npm audit --audit-level=high` and publishing a CycloneDX SBOM (`npm sbom`) as an artefact; Dependabot weekly, grouped, for npm and for GitHub Actions in both repositories, merged by hand. The security guide states what tflw itself does — no telemetry, no network beyond the named targets, the helper fence, the token model, the headers — and the support statement: Node 22 and 24, latest release only before 1.0. Turning on private vulnerability reporting is a repository setting, and Dependabot opens pull requests on its own schedule; both are outward-facing and land on the user's word, not the plan's. Not taken: `SECURITY.md` alone (a policy with no audit behind it is a promise), and auto-merge (a dependency bump in a testing tool changes what every user's run executes).
 
@@ -10340,6 +10340,22 @@ therefore still holds the shipped copy to "every statement" with no second corpu
 | id | decision |
 | --- | --- |
 | D1438 | **Still out of scope, by decision:** network reachability (`D1370`'s reason stands: a doctor that sends requests is a test run with a different exit code, wrong exactly when the network is the problem); a `--fix` mode (each problem already ends in its remedy, and a read-only command stays read-only); launching a browser to prove it starts (deferred: a downloaded engine can still lack host libraries on Linux, but proving it costs seconds and no user has reported it); comparing the running `tflw` with the project's installed copy (deferred to publish, since nothing is on npm). |
+
+### D1447
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1447 | **CI audits what ships, and the whole tree at high.** (a) A new gate takes the third-party packages esbuild inlined into every bundle the tarball and the `.vsix` carry, from the same metafiles `collectNotices` reads, at their locked versions, and asks the registry's bulk advisory endpoint about exactly those; it fails on **moderate or worse**. (b) `npm audit --audit-level=high` runs over the whole workspace, dev dependencies included. The `--omit=dev` step and its comment go: they audit a tree no user installs. (a) lands in M268; (b) lands with M269's cutover, since before it the vite advisory is red by known cause. |
+
+### D1450
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+| id | decision |
+| --- | --- |
+| D1450 | **The SBOM lists what ships.** The `sbom` artefact is generated from the same bundle list D1447a audits — each package esbuild inlined into the tarball's and the `.vsix`'s bundles, with its version, licence and package URL — as CycloneDX, plus the tarball's declared peers marked optional. `npm sbom --omit=dev` is removed: it describes a tree no user installs and omits the code they run. A gate holds the SBOM's component set equal to the bundle list, so the two cannot drift. |
 
 ### M0
 
@@ -14566,7 +14582,7 @@ graded. **`M234-04` closed 2026-09-25 when slice `C` merged there** (tflw-tests#
 
 ### M239
 
-<sub>cited from CHANGELOG.md, CONTRIBUTING.md, SPEC.md +16 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
+<sub>cited from CHANGELOG.md, SPEC.md, tflw-tests/CONSTRUCTS.md +15 more · lifted from `PLAN_M239_ENTERPRISE_READINESS.md`</sub>
 
 **§3 `M239` — the boundary: token, origin, confinement, helpers, process**
 
@@ -14922,5 +14938,17 @@ an `env` block should be able to declare its own required variables.
 exact `tflw run` the reader is about to type: doctor runs the same validation `run` runs, under the
 same flags, and checks the browser engine `run` will launch. It also gains a warnings tier that
 never changes the exit code, and `--all-envs`, one verdict per env. Scoped 2026-10-03.
+
+### M268
+
+<sub>cited from CONTRIBUTING.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+**M268 — everything but the docs site's vite (both repositories)**
+
+Every advisory and deprecation in both repositories except the docs site's vite is fixed by a
+version that does not have it: lockfile updates, `@vscode/vsce` 4, and `apiV2` on NestJS 12. CI
+gains an audit of the code the bundles actually ship, at moderate, and an SBOM written from that
+same list; both repositories gain a weekly deprecation scan, and the sibling's audit fails at
+moderate.
 
 <!-- GENERATED:decisions:end -->

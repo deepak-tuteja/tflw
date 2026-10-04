@@ -544,7 +544,7 @@ jobs:
   supply-chain:
     name: audit + SBOM
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -552,15 +552,19 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      # `--omit=dev`: the tree a `tflw` install carries. The development tree's advisories are
-      # Dependabot alerts, read by hand — see SECURITY.md.
-      - name: No high or critical advisory in the tree a user installs
-        run: npm audit --audit-level=high --omit=dev
-      # The same tree the audit reads. The whole workspace cannot be written down: `npm sbom`
-      # refuses a tree with an invalid peer (`ESBOMPROBLEMS`), and the docs site's search widget
-      # wants a React the page's React 19 is not.
-      - name: The tree a user installs, as a CycloneDX SBOM
-        run: npm sbom --sbom-format cyclonedx --package-lock-only --omit=dev > sbom.cdx.json
+      # `M268` (`D1447`, `D1450`): what ships is what the bundles inlined, and only the build knows
+      # that — each bundle's metafile, the same one the notice file is generated from.
+      - run: npm run build
+      # The code a user runs, at moderate. `npm audit --omit=dev` stood here and audited a tree no
+      # install carries: the CLI declares no `dependencies`, so it was green while `fast-uri` 3.1.7
+      # (moderate) was compiled into `dist/cli.cjs`.
+      - name: No moderate-or-worse advisory in the code tflw ships
+        run: npm run verify:bundle-advisories
+      - run: npm run verify:bundle-advisories:self-test
+      # The same list, as CycloneDX, read back and held equal to the metafiles.
+      - name: What ships, as a CycloneDX SBOM
+        run: npm run verify:sbom
+      - run: npm run verify:sbom:self-test
       - uses: actions/upload-artifact@v7
         with:
           name: sbom

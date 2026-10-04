@@ -65,7 +65,10 @@ npm run build
 npm run typecheck
 xvfb-run -a npm test
 npm run verify:observability
-npm audit --audit-level=high --omit=dev
+npm run verify:bundle-advisories
+npm run verify:bundle-advisories:self-test
+npm run verify:sbom
+npm run verify:sbom:self-test
 npm run verify:corpora
 npm run verify:fmt-roundtrip -- --check
 npm run verify:check-coverage
@@ -115,11 +118,17 @@ npm run verify:ledger                  # § never runs in CI, by decision
   401 without the token — so a route added tomorrow joins the walk that day — and `ui-headers.test.ts`
   grades the served page with tflw's own `sec/*` rules. A change to `ui-server.ts` that loosens
   either is a red in the suite, not a review comment.
-- **`npm audit --audit-level=high --omit=dev`** — nothing a `tflw` install carries has a known
-  high-or-critical advisory (`M239` `E`, `D1320`). The development tree is left to Dependabot's
-  alerts, read by hand: the day the gate landed, all four open ones were about a development
-  server nothing here runs reachably, and the one in-range fix was an alpha. CI's `supply-chain` job runs it and also publishes a CycloneDX SBOM of the
-  tree as an artefact; the SBOM is a record rather than a check and has no local form.
+- **`npm run verify:bundle-advisories`** — no third-party package compiled into what tflw ships has
+  a known moderate-or-worse advisory (`M268`, `D1447`). The CLI and the extension declare no runtime
+  `dependencies`: esbuild inlines them, so the shipped set is read off each bundle's metafile (the
+  one `THIRD-PARTY-NOTICES.md` is generated from) and put to the registry's advisory endpoint, and a
+  finding names the bundle that carries the package. `npm audit --omit=dev` is not a substitute — it
+  reads the workspace tree, which is not what an install runs. Needs `npm run build` and the network,
+  and fails rather than skips without either. Its `:self-test` holds the failure modes, one of them
+  against the live endpoint.
+- **`npm run verify:sbom`** — writes `sbom.cdx.json`, a CycloneDX bill of materials of that same
+  list plus the tarball's peers, then reads the file back and fails if it disagrees with the
+  metafiles (`D1450`). CI uploads it as the `sbom` artefact. Needs the build; no network.
 - **`npm run verify:corpora`** — every guard states, as data, the corpus it reads, and this plants a
   violation inside each declared corpus to check the guard actually catches it. The point is the
   direction these things fail: a guard whose corpus is narrower than its subject does not report a

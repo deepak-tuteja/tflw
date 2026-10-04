@@ -283,8 +283,19 @@ writeFileSync(
 // *outside* `dist/`, so `files: ["dist"]` cannot ship a build byproduct, and gitignored. Writing it
 // is what keeps the guard from needing its own copy of the build config, which would be the drift
 // this whole milestone exists to remove.
+//
+// `M268` `C` (`D1447`, `D1450`) — `bundles` names which output inlined which input, because the
+// union above cannot: the shipped-code audit and the SBOM (`scripts/shipped-packages.mjs`) say *which
+// file* carries a package, so a finding points at the bytes that ship rather than at the tarball.
 writeFileSync(
   new URL('../.bundle-meta.json', import.meta.url),
-  JSON.stringify({ inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs, ...uiMetafile.inputs } }),
+  JSON.stringify({
+    inputs: { ...cliBuild.metafile.inputs, ...workerBuild.metafile.inputs, ...uiMetafile.inputs },
+    bundles: {
+      'dist/cli.cjs': Object.keys(cliBuild.metafile.inputs),
+      'dist/mtls-worker.cjs': Object.keys(workerBuild.metafile.inputs),
+      'dist/ui/': Object.keys(uiMetafile.inputs),
+    },
+  }),
   'utf8',
 );
