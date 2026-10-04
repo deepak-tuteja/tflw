@@ -19,7 +19,7 @@
 import assert from 'node:assert/strict';
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, normalize, relative } from 'node:path';
+import { extname, join, normalize, relative, sep } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -157,7 +157,7 @@ test("every page's canonical link and og:url is the address the page is served a
   const files = html(DIST);
   assert.equal(files.length, PAGES.length, 'every published page, and only those');
   for (const file of files) {
-    const path = relative(DIST, file).replace(/index\.html$/, '').replace(/\.html$/, '');
+    const path = relative(DIST, file).split(sep).join('/').replace(/index\.html$/, '').replace(/\.html$/, '');
     const source = readFileSync(file, 'utf8');
     const canonical = source.match(/<link rel="canonical" href="([^"]*)"/)?.[1];
     const ogUrl = source.match(/<meta property="og:url" content="([^"]*)"/)?.[1];
