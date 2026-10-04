@@ -71,9 +71,12 @@ export const NORMALISE = [
   [/\b\d{4}-\d{2}-\d{2}T\d{2}[:-]\d{2}[:-]\d{2}(?:[.,-]\d+)?Z?/g, '<time>', 'timestamps — `now`, and a kept run\'s directory name, whose milliseconds follow a `-` (`…T09-30-14-902Z`)'],
   [/\b\d{2}:\d{2}:\d{2}\.\d{3}\b/g, '<clock>', 'the wall-clock prefix `tflw run` puts on every console line unless `--no-timestamps`'],
   [/\bseed \d+/g, 'seed <seed>', 'a run mints a fresh seed unless `--seed` fixes one'],
+  // Before durations, not after (`M269`): the token is 32 random bytes in base64url, so its tail can
+  // read as a duration — `…k-9s` — and a duration rule that runs first leaves `token=<token><t>`.
+  // CI met it once in a few hundred runs; the order is the fix, and the test pins it.
+  [/\btoken=[\w-]+/g, 'token=<token>', "`tflw ui`'s per-start token"],
   [/\b\d+(?:\.\d+)? ?(?:ms|s)\b/g, '<t>', 'durations — the run line, `npm install`, a test that waited'],
   [/\b(127\.0\.0\.1|localhost):\d+/g, '$1:<port>', 'ports — the gate moves the shop off 4720 with `SHOP_URL`, as a reader with 4720 taken does'],
-  [/\btoken=[\w-]+/g, 'token=<token>', "`tflw ui`'s per-start token"],
   [/\btflw([ @-])\d+\.\d+\.\d+(?:-[\w.]+)?/g, 'tflw$1<version>', "tflw's own version, which the page should not have to chase"],
   [/\bNode v\d+\.\d+\.\d+/g, 'Node v<node>', 'the Node a reader has — the page asks for 22 or newer, not for one patch'],
   [/\bplaywright \d+\.\d+\.\d+/g, 'playwright <version>', 'the Playwright `npm install` resolved today'],

@@ -60,6 +60,8 @@ test('the normalisations take what differs between two honest runs, and nothing 
   assert.equal(normalise('12:34:35.653 PASS 35/35 passed'), '<clock> PASS 35/35 passed');
   assert.equal(normalise('kept: report/runs/2026-10-01T09-30-14-902Z'), 'kept: report/runs/<time>', 'a kept run\'s directory, milliseconds after a dash');
   assert.equal(normalise('the coffee shelf is on http://127.0.0.1:41873'), 'the coffee shelf is on http://127.0.0.1:<port>');
+  // A token whose tail reads as a duration is still one token (`M269`: CI printed `<token><t>`).
+  assert.equal(normalise('at http://127.0.0.1:41873/?token=Zq3k-9s (loopback only)'), 'at http://127.0.0.1:<port>/?token=<token> (loopback only)');
   assert.equal(normalise('wrote /tmp/x/reader/report/report.html', ['/tmp/x/reader']), 'wrote <dir>/report/report.html');
   assert.equal(normalise('tflw 0.1.0 · Node v22.11.0'), 'tflw <version> · Node v<node>');
   // Counts are the claim, never normalised: "32 tests" must stay 32.
