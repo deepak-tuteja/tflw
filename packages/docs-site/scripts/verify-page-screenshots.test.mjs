@@ -18,8 +18,8 @@
 //     family, a gate that reads one of the things it is guarding. Fixed in `screenshot-inputs.mjs`.
 //  2. **Nothing checked the picture renders.** Asserting the markdown *string* contains a file name
 //     passes green while the deployed page 404s, and this site is served from a project subpath
-//     (`base: '/tflw/'`) that has already cost one scar in `config.ts`. So the last test reads
-//     `.vitepress/dist` — the artefact, not the label.
+//     (`base: '/tflw/'`) that has already cost one scar in the site's config. So the last test reads
+//     `dist` — the artefact, not the label.
 //  3. **The draft was anchored on a file name.** It asserted against one `guide/the-page.md` and a
 //     flat shot list, both of which `D1277` and `D1282` change out from under it. Everything here
 //     is anchored on a *structure* instead: the `page/` directory, whatever it holds, and the
@@ -34,12 +34,14 @@ import { DEFAULT_VIEWPORT, DOCS_PAGE_DIR, SHOTS, THEMES, VIEWS, appearanceOf, sc
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const SITE = join(here, '..');
-const PAGE_MD_DIR = join(SITE, 'ui');
+// `M269`: the pages are Starlight's content collection.
+const PAGES = join(SITE, 'src', 'content', 'docs');
+const PAGE_MD_DIR = join(PAGES, 'ui');
 /* `M261` — the page's pictures are embedded by two surfaces now: the `/ui/` reference, and chapter 7
    of the walkthrough, whose `walk-*` views exist for it alone. Both are read, so a chapter shot no
    page embeds still fails, and so does an embed of one nobody cut. */
-const EMBED_DIRS = [PAGE_MD_DIR, join(SITE, 'runbook', 'start')];
-const DIST = join(SITE, '.vitepress', 'dist');
+const EMBED_DIRS = [PAGE_MD_DIR, join(PAGES, 'runbook', 'start')];
+const DIST = join(SITE, 'dist');
 const MANIFEST_PATH = join(DOCS_PAGE_DIR, 'manifest.json');
 const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const RECUT = 'run: node --import tsx packages/ui/scripts/make-screenshots.mjs';
@@ -158,7 +160,7 @@ test('the `/ui/` surface embeds every shot, and embeds nothing that is not there
 });
 
 test('each embed is tagged for the appearance its theme belongs to', () => {
-  // `D1282`'s whole claim: a picture ships as a light/dark PAIR and VitePress swaps them off the
+  // `D1282`'s whole claim: a picture ships as a light/dark PAIR and the site swaps them off the
   // reader's appearance. An untagged pair renders BOTH, one above the other, which is not a
   // broken build and not a visible error — it is a page that quietly shows the same picture twice.
   // Nothing else on this site would catch that.
@@ -183,17 +185,18 @@ test('the appearance tag is a rule the built stylesheet actually carries', () =>
   // author wrote `{.light-only}`, which was true from the day the shots landed and stayed true
   // while every page in this section rendered both halves of every pair.
   //
-  // `{.light-only}` is not a VitePress feature. It is an attrs block that markdown-it copies onto
-  // the `<img>` as a class, and a class does nothing until a stylesheet claims it. VitePress ships
+  // `{.light-only}` is not a markdown feature. It is an attrs block the site's markdown pipeline
+  // copies onto the `<img>` as a class (markdown-it's under VitePress, `src/lib/markdown.mjs` since
+  // `M269`), and a class does nothing until a stylesheet claims it. VitePress shipped
   // `html:not(.dark) .VPImage.dark` for its own logo component, which a markdown image never
-  // becomes — so the attribute looks supported, the build is clean, the gate above is green, and
-  // the reader gets the light screenshot stacked on top of the dark one.
+  // became — so the attribute looked supported, the build was clean, the gate above was green, and
+  // the reader got the light screenshot stacked on top of the dark one.
   //
   // So the claim is made about the ARTEFACT: the stylesheet `dist` actually serves must contain a
   // rule for each appearance class. Reading `custom.css` instead would re-make the original
   // mistake in a new place — asserting what the author typed, one layer further down.
   assert.ok(existsSync(DIST), `the site is not built — expected ${DIST}`);
-  const assets = join(DIST, 'assets');
+  const assets = join(DIST, '_astro');
   const css = readdirSync(assets)
     .filter((n) => n.endsWith('.css'))
     .map((n) => readFileSync(join(assets, n), 'utf8'))
@@ -218,9 +221,10 @@ test('the appearance tag is a rule the built stylesheet actually carries', () =>
 test('the built site serves the pictures at the deployed base path', () => {
   // `M233` §0 defect 2, and the reason it is worth a test of its own: this site is served from
   // `base: '/tflw/'`, and a path that is right in the markdown can still be wrong in `dist` —
-  // `config.ts` already carries a scar from exactly that asymmetry (`themeConfig.logo` is
-  // base-prefixed automatically and a `head` link is not). Asserting the markdown proves the
-  // author's intent; this asserts the artefact.
+  // the VitePress config carried a scar from exactly that asymmetry (`themeConfig.logo` was
+  // base-prefixed automatically and a `head` link was not), and Astro prefixes no markdown link at
+  // all (`src/lib/markdown.mjs` does it). Asserting the markdown proves the author's intent; this
+  // asserts the artefact.
   assert.ok(
     existsSync(DIST),
     `the site is not built — expected ${DIST}.\n       Run \`npm run build -w @tflw/docs-site\` first (CI's \`npm run build\` does this).`,

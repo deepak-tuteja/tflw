@@ -93,8 +93,9 @@ const CLASSIFIED = [
   { wf: 'ci.yml', job: 'action-dry-run', cmd: 'cp -R examples/storefront "$RUNNER_TEMP/storefront"', class: 'ci-only', why: 'the Action\'s dry run (`M252` `C`, `D1378`) — the storefront outside the tree, so the Action\'s `npm i` installs into a project and not into this workspace' },
   { wf: 'ci.yml', job: 'action-dry-run', cmd: 'node "$RUNNER_TEMP/storefront/server.mjs" &', class: 'ci-only', why: 'the Action\'s dry run (`M252` `C`, `D1378`) — the storefront the suite runs against, for the rest of the job' },
   { wf: 'ci.yml', job: 'action-dry-run', cmd: 'test "${{ steps.tflw.outputs.exit-code }}" = 0 && test -f "$RUNNER_TEMP/storefront/report/junit.xml"', class: 'ci-only', why: 'the Action\'s dry run (`M252` `C`, `D1378`) — the Action reported tflw\'s own exit code and left the report the annotator reads; a contributor tries the Action by pushing' },
-  // --- ci.yml, job `supply-chain` (`M239` `E`, `D1320`; `M268`, `D1447`, `D1450`) ---
+  // --- ci.yml, job `supply-chain` (`M239` `E`, `D1320`; `M268`, `D1447`, `D1450`; `M269`) ---
   { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm ci', class: 'setup', why: 'dependency install, again, because this job runs on its own runner' },
+  { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm audit --audit-level=high', class: 'gate', local: 'npm audit --audit-level=high', why: '`M269` (`D1447`). The whole workspace, dev dependencies included, at high: the bundle gate below holds the shipped code to moderate, and this holds the tree a contributor installs. Landed with the docs site\'s move off VitePress, before which it was red by known cause (vite 5, no fix in VitePress 1.x). Reads the lockfile against the registry; no install needed. Seconds' },
   { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm run build', class: 'setup', why: 'the bundles, whose metafiles are the shipped-package list the two gates below read; the build gate itself is the `test` job\'s' },
   { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm run verify:bundle-advisories', class: 'gate', local: 'npm run verify:bundle-advisories', why: '`M268` `C` (`D1447`). No moderate-or-worse advisory in any third-party package esbuild inlined into the tarball or the `.vsix`, read off the bundles\' own metafiles and put to the registry\'s bulk advisory endpoint. It replaces `npm audit --omit=dev`, which audited a tree no install carries — the CLI declares no `dependencies` — and was green while `fast-uri` 3.1.7 shipped inside `dist/cli.cjs`. Needs the build and the network; fails rather than skips when either is missing. Seconds' },
   { wf: 'ci.yml', job: 'supply-chain', cmd: 'npm run verify:bundle-advisories:self-test', class: 'gate', local: 'npm run verify:bundle-advisories:self-test', why: '`D922`. Ten offline controls — a moderate fails naming the package and the bundle, a low passes, an empty list and an artifact with no third-party package fail as measuring nothing, a 503, a thrown fetch, an answer about an unasked package and an unknown severity each fail rather than read as clean — and one live one: the real endpoint must report `fast-uri` 3.1.7 at moderate and 3.1.8 clean, so a change in what the endpoint means reddens here. Seconds' },
@@ -331,7 +332,7 @@ const CLASSIFIED = [
     cmd: 'npm run test:links -w @tflw/docs-site',
     class: 'gate',
     local: 'npm run test:links -w @tflw/docs-site',
-    why: 'docs anchors and sidebars, read off the built `.vitepress/dist`, so it needs `npm run build` first. Separate from `npm test` for that reason — and it is the gate `M136a-02`\'s own list forgot',
+    why: 'docs anchors, sidebars and the published URLs (`D1441`), read off the built `packages/docs-site/dist`, so it needs `npm run build` first. Separate from `npm test` for that reason — and it is the gate `M136a-02`\'s own list forgot',
   },
   {
     wf: 'ci.yml',

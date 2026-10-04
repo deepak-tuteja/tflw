@@ -209,15 +209,15 @@ test('a forward-looking claim about tflw fails the run', async () => {
 });
 
 test("the repo root's README.md is scanned — `D658`, the file the class last fired in", async () => {
-  // `M135b` fixed this exact class *in README.md*, and README.md is `srcExclude`d from the site and
-  // sits two levels above the docs root. Every other check here walks the docs root and would
+  // `M135b` fixed this exact class *in README.md*, and README.md is outside the site's pages and
+  // sits five levels above them (`packages/docs-site/src/content/docs`, since `M269`). Every other check here walks the docs root and would
   // therefore have been a guard that could not see the file it was written about.
   const { code, stderr } = await guard(
     {
-      'packages/docs-site/index.md': '# x\n',
+      'packages/docs-site/src/content/docs/index.md': '# x\n',
       'README.md': '# tflw\n\nAPI, browser and load testing — security testing is next.\n',
     },
-    { docsRoot: 'packages/docs-site' },
+    { docsRoot: 'packages/docs-site/src/content/docs' },
   );
   assert.equal(code, 1, stderr);
   assert.match(stderr, /README\.md:3/);

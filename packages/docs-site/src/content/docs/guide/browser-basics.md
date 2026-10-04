@@ -96,7 +96,7 @@ page that raises a `prompt` or a `confirm` depending on its state is a real thin
 will not refuse the step — but it will not let the text go missing quietly either, which is what
 happens underneath if nobody says anything.
 
-::: warning On an `alert`, arming proves nothing by itself.
+:::caution[On an `alert`, arming proves nothing by itself.]
 An alert has one button, so accepting and dismissing it do exactly the same thing to the page. A
 test that arms one and then asserts the page would pass just as well with the arming line deleted.
 Assert the dialog itself — its `message` and its `type` — and the test says something.
@@ -131,7 +131,7 @@ Two dialogs and one arming is not this: the extra dialog takes the dismiss defau
 left over. And `beforeunload` is the honest exception — browsers raise it only after a real user
 gesture, so a headless run may correctly never see one.
 
-::: tip Coming from Playwright or Cypress? The tick action is `tick`, not `check`.
+:::tip[Coming from Playwright or Cypress? The tick action is `tick`, not `check`.]
 Both of those spell it `check()`, so `check field "Accept terms"` is the natural thing to type. In
 tflw `check` is the **soft assertion** — the forgiving twin of `expect`, see
 [Assertions in depth](/guide/assertions) — and nothing else.

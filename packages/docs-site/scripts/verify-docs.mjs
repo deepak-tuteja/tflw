@@ -42,7 +42,8 @@ const execFileAsync = promisify(execFile);
 const here = fileURLToPath(new URL('.', import.meta.url));
 // Overridable so the guard's own tests can point it at a fixture corpus — a doc-truth guard that
 // is never itself run against a known-bad input is the unearned confidence it exists to remove.
-const ROOT = process.env.TFLW_DOCS_ROOT ?? join(here, '..');
+// `M269`: the pages are Starlight's content collection.
+const ROOT = process.env.TFLW_DOCS_ROOT ?? join(here, '..', 'src', 'content', 'docs');
 const CLI = join(here, '../../cli/dist/cli.cjs');
 const FIXTURE_CONFIG = join(here, 'fixtures/tflw.config');
 const FIXTURE_SESSIONS = join(here, 'fixtures/sessions.config');

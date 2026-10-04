@@ -2,21 +2,25 @@
   "name": "@tflw/docs-site",
   "version": "0.1.0",
   "private": true,
-  "description": "tflw documentation site (VitePress) — deployed to GitHub Pages.",
+  "description": "tflw documentation site (Astro Starlight) — deployed to GitHub Pages.",
   "type": "module",
   "scripts": {
     "brand": "node scripts/generate-brand-assets.mjs",
-    "dev": "vitepress dev .",
-    "build": "vitepress build .",
-    "preview": "vitepress preview .",
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
     "test": "node --test scripts/*.test.mjs && node scripts/verify-docs.mjs && node scripts/verify-construct-homes.mjs",
-    "test:links": "node scripts/verify-links.mjs && node scripts/verify-sidebars.mjs"
+    "test:links": "node scripts/verify-links.mjs && node scripts/verify-sidebars.mjs && node scripts/verify-url-parity.mjs && node scripts/verify-url-parity.mjs --self-test"
   },
   "dependencies": {
     "@tflw/lang": "*",
     "@tflw/lsp-server": "*"
   },
   "devDependencies": {
-    "vitepress": "^1.6.4"
+    "@astrojs/markdown-remark": "^7.3.1",
+    "@astrojs/starlight": "^0.42.5",
+    "@astrojs/vue": "^7.0.3",
+    "astro": "^7.3.5",
+    "vue": "^3.5.43"
   }
 }

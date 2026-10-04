@@ -1,0 +1,75 @@
+---
+// `M269` (`D1443`) — Starlight's content wrapper, plus the page's `pageClass`. Two pages-wide hooks
+// earn one: `ui-shots` (the `/ui/` pages and the walkthrough's chapter on the page, whose screenshots
+// break out of the text column) and `grammar-page` (wrap the EBNF rather than hide it behind a
+// scrollbar). Both are in `src/styles/custom.css`, with their reasons.
+import Default from '@astrojs/starlight/components/MarkdownContent.astro';
+
+const { pageClass } = Astro.locals.starlightRoute.entry.data;
+---
+
+{pageClass ? <div class={pageClass}><Default><slot /></Default></div> : <Default><slot /></Default>}
+
+<script>
+  /**
+   * **Press a picture to read it** — `M234` `G` (`D1305`).
+   *
+   * The `/ui/` shots are cut at 1440 or 1060 css and land in a content column far narrower than
+   * that, so the UI's 13px type arrives at around 6px. `deviceScaleFactor: 2` buys the resolution;
+   * nothing was buying the *size*. `medium-zoom` was refused (`D1305`): it would be this site's first
+   * runtime dependency, and the backdrop has to be theme-aware for the `.light-only`/`.dark-only`
+   * pairs either way.
+   *
+   * Three ways out, because a reader who cannot dismiss an overlay is trapped in it: a press
+   * anywhere, `Escape`, and a scroll. The page is **not** scroll-locked while the overlay is up —
+   * locking it would remove the very gesture that dismisses it.
+   */
+  let overlay: HTMLElement | null = null;
+  let opener: HTMLElement | null = null;
+
+  const close = (): void => {
+    if (overlay === null) return;
+    overlay.remove();
+    overlay = null;
+    // Focus goes back where it came from, not to the top of the document.
+    opener?.focus?.();
+    opener = null;
+  };
+
+  document.addEventListener('click', (event) => {
+    // An overlay that is up swallows the next press, whatever it landed on — so pressing the
+    // enlarged picture itself closes rather than re-opening it.
+    if (overlay !== null) {
+      close();
+      return;
+    }
+    const target = event.target as HTMLElement | null;
+    if (target === null || target.tagName !== 'IMG') return;
+    // Content pictures only: the logo, the hero and anything a component draws are not the subject.
+    if (target.closest('.sl-markdown-content') === null) return;
+
+    const source = target as HTMLImageElement;
+    overlay = document.createElement('div');
+    overlay.className = 'tflw-zoom';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', source.alt === '' ? 'the picture, enlarged' : source.alt);
+    overlay.tabIndex = -1;
+
+    const big = document.createElement('img');
+    // `currentSrc`, not `src`: the light/dark pair is chosen by CSS, and `src` on a hidden member of
+    // the pair would enlarge the picture the reader is not looking at.
+    big.src = source.currentSrc === '' ? source.src : source.currentSrc;
+    big.alt = source.alt;
+    overlay.append(big);
+
+    document.body.append(overlay);
+    opener = source;
+    overlay.focus();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') close();
+  });
+  window.addEventListener('scroll', close, { passive: true });
+</script>

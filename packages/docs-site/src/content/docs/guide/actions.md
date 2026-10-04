@@ -39,7 +39,7 @@ test "reuses an action and a JS helper"
 Space-separated call names (`create widget(...)`, `make label(...)`) resolve to the action/export's
 camelCase name (`createWidget`/`makeLabel`) under the hood.
 
-::: tip This page used to say the opposite
+:::tip[This page used to say the opposite]
 Until tflw 0.2 a bound value could not stand on the left of a matcher, and this page told you to
 route it through a request `body` or `header` field and assert on *that*. Don't. That workaround
 made the system under test carry back a value your test already had — an extra round-trip, and a

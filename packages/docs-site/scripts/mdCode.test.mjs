@@ -23,7 +23,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { code } from '../.vitepress/mdCode.ts';
+import { code } from '../src/lib/mdCode.ts';
 import { DIAGNOSTICS, MATCHERS, GENERATORS, CLI_FLAGS } from '@tflw/lang';
 
 // ---- 1. the two fences -------------------------------------------------------------------------

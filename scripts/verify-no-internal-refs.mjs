@@ -30,6 +30,11 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const DOCS = 'https://deepak-tuteja.github.io/tflw/';
+// Where the docs site's pages are (`M269`: Starlight's content collection), and the page files a URL
+// path can name: `x.md`/`x.mdx`, or `x/index.md`/`x/index.mdx`.
+const PAGES = 'packages/docs-site/src/content/docs';
+const pageExists = (root, path) =>
+  path === '' || ['.md', '.mdx', '/index.md', '/index.mdx'].some((ext) => existsSync(join(root, PAGES, `${path}${ext}`)));
 
 export const EVERYWHERE = [
   ['a milestone id', /\bM\d{2,3}[a-z]?(-\d+)?\b/],
@@ -110,8 +115,7 @@ export function findings({ root = ROOT, allow = [] } = {}) {
         for (const m of text.matchAll(/https:\/\/deepak-tuteja\.github\.io\/tflw\/([a-z0-9/-]*)/g)) {
           const pagePath = m[1].replace(/\/$/, '');
           docsPages.add(pagePath);
-          const exists = pagePath === '' || existsSync(join(root, 'packages/docs-site', `${pagePath}.md`)) || existsSync(join(root, 'packages/docs-site', pagePath, 'index.md'));
-          if (!exists) out.push(`${rel}:${line}: a docs link to a page the site does not have — ${DOCS}${pagePath}`);
+          if (!pageExists(root, pagePath)) out.push(`${rel}:${line}: a docs link to a page the site does not have — ${DOCS}${pagePath}`);
         }
       }
     }
@@ -125,7 +129,7 @@ export function selfTest() {
   const root = mkdtempSync(join(tmpdir(), 'no-internal-refs-'));
   try {
     const put = (rel, text) => { mkdirSync(join(root, rel, '..'), { recursive: true }); writeFileSync(join(root, rel), text); };
-    put('packages/docs-site/guide/config.md', '# config\n');
+    put(`${PAGES}/guide/config.md`, '# config\n');
     put('packages/runtime/src/a.ts', [
       "import x from './D12';",
       "// a comment may say D285 and SPEC §9.8",

@@ -248,7 +248,7 @@ const pretty = (text: string): string => {
 const setup = stagedSetup(async () => {
   scratch = await mkdtemp(join(tmpdir(), 'tflw-ui-page-'));
   // The bundle, built here rather than taken from `dist/ui` so this file grades the checked-out
-  // page whatever was last built. The ui's own vite, not the root's (VitePress pins a vite 5).
+  // page whatever was last built. The ui's own vite, resolved from the ui package rather than the root.
   const viteManifestPath = createRequire(uiRoot).resolve('vite/package.json');
   const viteBin = join(dirname(viteManifestPath), (JSON.parse(await readFile(viteManifestPath, 'utf8')) as { bin: { vite: string } }).bin.vite);
   const staticDir = join(scratch, 'ui');

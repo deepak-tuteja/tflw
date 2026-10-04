@@ -1,0 +1,217 @@
+// `M269` (`D1440`, `D1443`) — the site's navigation, as data. Moved out of VitePress's `config.ts`
+// unchanged in shape (`text`/`link`/`items`): `astro.config.mjs` turns it into Starlight's sidebar,
+// and `packages/cli/scripts/gen-docs.mjs` imports it to order `tflw docs` the way the site does, so
+// the two read one list rather than one of them parsing the other's source text.
+import { WALKTHROUGH } from './lib/walkthrough.mjs';
+
+// The top nav is Home · Guide · Reference · Grammar · Editor · Playground · Changelog. `appearance`
+// is intentionally left unset — VitePress's default (`true`) already shows a light/dark toggle that
+// respects the reader's OS preference; overriding it would be the wrong direction.
+//
+// The nav names *surfaces*, not chapters. The guide's own shape lives in `GUIDE_SIDEBAR` below,
+// which is the only place the reading order is written down.
+
+/** The guide rail, hoisted to a `const` so the two sidebar keys that need it (`/guide/` and
+ * `/getting-started`, `M125e`/`FU-30`) name one array instead of holding two copies of it.
+ *
+ * Grouped by pillar (`M149b`/`D649`/`D650`), not numbered. Two properties here are deliberate and
+ * are the kind that get undone by accident:
+ *
+ *  - **Every URL stays flat.** A pillar is a sidebar group, never a path segment —
+ *    `/guide/assertions` does not become `/guide/functional/assertions`. Grouping delivers the whole
+ *    navigational benefit at zero link breakage, and nesting would charge every external link to
+ *    eighteen pages, forever, to fix a left rail. That is the trade `M125e`/`D282` already made for
+ *    `getting-started.md` and rejected, and nothing about it is weaker for eighteen pages.
+ *  - **No label carries a number.** A number in a heading is a fact that goes wrong on every
+ *    insertion: nine chapters were added to this guide after the old numbering was set, and the
+ *    browser arc's two insertions renumbered eight pages. Sequence is carried by the order of this
+ *    array and nowhere else, so a page can be inserted without renaming its neighbours.
+ *
+ * Browser testing sits under *Functional*, not in a pillar of its own: a browser test is a
+ * functional test whose subject is a UI, and the site's thesis is that the two share one grammar.
+ * Giving UI its own top-level pillar would argue the opposite in the navigation.
+ */
+export const GUIDE_SIDEBAR = [
+  {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
+    text: 'Start here',
+    items: [
+      { text: 'Install & quickstart', link: '/getting-started' },
+      { text: 'Writing your first test', link: '/guide/first-test' },
+      { text: 'Config & environments', link: '/guide/config' },
+      { text: 'Sessions & auth', link: '/guide/sessions' },
+      { text: 'Signed requests', link: '/guide/signed-requests' },
+    ],
+  },
+  {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
+    // `D654`. A pillar's overview is the group's own `text` link, not a first item inside it. The
+    // two renderings differ in what they say about the page: an item is a sibling of the chapters,
+    // a linked group title is the thing the chapters are under — which is what an overview is.
+    text: 'Functional testing',
+    link: '/guide/functional',
+    items: [
+      { text: 'Assertions in depth', link: '/guide/assertions' },
+      { text: 'Variables, generators & expressions', link: '/guide/variables' },
+      { text: 'Data-driven tests & hooks', link: '/guide/data-and-hooks' },
+      { text: 'Retry, polling & flaky handling', link: '/guide/retry-and-polling' },
+      // "JS/TS", matching the page's own H1. The sidebar said "JS escape hatch" and the H1 said
+      // "JS/TS escape hatch" for eleven milestones — two names for one thing, which is the drift
+      // `D650` exists to remove rather than carry through a rename.
+      { text: 'Actions, imports & the JS/TS escape hatch', link: '/guide/actions' },
+      { text: 'Browser testing: interacting with a UI', link: '/guide/browser-basics' },
+      { text: 'Browser testing: advanced scenarios', link: '/guide/browser-advanced' },
+      // `M242` `G` (`D1332`) — what to write instead of an `if`.
+      { text: 'Patterns: what to write instead of an `if`', link: '/guide/patterns' },
+    ],
+  },
+  {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
+    // `D655` split the one 434-line page at the workload/threshold seam: the first chapter is how
+    // you generate load, the second is how you judge it. The labels are each page's own H1 — the
+    // rail promising workloads and delivering thresholds too was the reason the pre-split label
+    // could not be renamed ahead of the split.
+    text: 'Performance testing',
+    link: '/guide/performance',
+    items: [
+      { text: 'Load testing: workloads & scenarios', link: '/guide/load-testing' },
+      { text: 'Thresholds, results & validation', link: '/guide/load-results' },
+    ],
+  },
+  {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
+    // Findings & baselines goes last, not first: it is the machinery for what you do with what the
+    // four scans find, and it reads as procedure before there is anything to apply it to.
+    text: 'Security & vulnerability testing',
+    link: '/guide/security',
+    items: [
+      { text: 'Hygiene scanning', link: '/guide/security-scanning' },
+      { text: 'Authorization testing', link: '/guide/authorization-testing' },
+      { text: 'Input-handling testing', link: '/guide/input-handling' },
+      { text: 'Crawling an undocumented surface', link: '/guide/crawling' },
+      { text: 'Findings, baselines & the gate', link: '/guide/findings-and-baselines' },
+    ],
+  },
+  {
+    // `D1307` — foldable, open by default.
+    collapsed: false,
+    text: 'Running & reporting',
+    items: [
+      { text: 'Running & debugging tests', link: '/guide/debugging' },
+      { text: 'CI, reporting & safety', link: '/guide/ci-and-reporting' },
+    ],
+  },
+];
+
+export const NAV = [
+  { text: 'Guide', link: '/guide/first-test' },
+  // `tflw ui` is a surface, not a chapter — this nav names surfaces, which is why Editor and
+  // Playground are here and `Assertions` is not. An authoring environment the size of the
+  // language, filed under a sub-bullet of a guide chapter, would be the navigation asserting
+  // something false.
+  //
+  // **Named `The UI` here and `the page` inside it** (`M233` `I`, `D1293`). "The page" is the
+  // term `D1042`-`D1045` argue in and it stays the section's own voice; it fails *here*,
+  // where a reader scanning `Guide · Reference · Grammar · Editor · The page · Playground`
+  // has nothing telling them one of those is an application. Second in the nav rather than
+  // fifth, because it is a peer of the Guide and 80.7% of this site being prose about the
+  // language was the whole of the complaint that moved it.
+  { text: 'The UI', link: '/ui/' },
+  // `M247` `F` (`D1350`) — the adopter's runbook: how to run a project, grown one page per
+  // milestone rather than written at the end. Its index, glossary and troubleshooting pages
+  // arrive with `M253`.
+  { text: 'Runbook', link: '/runbook/' },
+  { text: 'Reference', link: '/reference/matchers' },
+  { text: 'Grammar', link: '/grammar' },
+  { text: 'Editor', link: '/editor' },
+  { text: 'Playground', link: '/playground' },
+  { text: 'Changelog', link: '/changelog' },
+];
+
+export const SIDEBARS = {
+  // `M125e`/`FU-30`/D282. `getting-started.md` lives at `/getting-started`, not under
+  // `/guide/`, so before this it matched no key but the `/` fallback and the page the home
+  // page's primary CTA points at rendered the *More* rail — Grammar, Playground, Changelog —
+  // instead of the guide it is the entrance to.
+  //
+  // Two keys naming ONE array, not two copies. VitePress resolves the longest matching path
+  // prefix, so `/getting-started` beats `/` with no effect on any other page. Moving the file
+  // under `guide/` was the other repair and was rejected: it changes a published URL that the
+  // home CTA, the README and the npm page all point at, to fix a left rail.
+  '/guide/': GUIDE_SIDEBAR,
+  '/getting-started': GUIDE_SIDEBAR,
+  // The UI's own rail, in the order a reader meets the surface: what it is, the shape every
+  // surface shares, then one page per kind, then reading a run and what it will not do.
+  //
+  // **The four doors are four pages, not one** (`D1294`). They were one page with one
+  // screenshot, and the screenshot was cut at a door its caption did not name. The doors are
+  // the axis this UI is organised on, and a reader who wants the LOAD door does not want the
+  // other three first.
+  // `M259` (`D1415`): the walkthrough leads — one project, in a first day's order — and the
+  // topic pages follow it as how-tos. `walkthrough.mjs` is the order, shared with the gate
+  // that runs each chapter's commands.
+  '/runbook/': [
+    { text: 'Start here', items: WALKTHROUGH },
+    {
+      text: 'Runbook',
+      link: '/runbook/',
+      items: [
+        { text: 'Installing tflw', link: '/runbook/install' },
+        { text: 'Setting up a project', link: '/runbook/project' },
+        { text: 'Running a suite', link: '/runbook/running' },
+        { text: 'Working on the page', link: '/runbook/page' },
+        { text: 'Working in the editor', link: '/runbook/editor' },
+        { text: 'Troubleshooting', link: '/runbook/troubleshoot' },
+        { text: 'Glossary', link: '/runbook/glossary' },
+      ],
+    },
+  ],
+  '/ui/': [
+    {
+      text: 'The UI',
+      link: '/ui/',
+      items: [
+        { text: 'The spine', link: '/ui/spine' },
+        { text: 'The four kinds', link: '/ui/kinds' },
+        { text: 'API tests', link: '/ui/api' },
+        { text: 'BROWSER tests', link: '/ui/browser' },
+        { text: 'LOAD tests', link: '/ui/load' },
+        { text: 'SCANS', link: '/ui/scans' },
+        { text: 'Reading a run', link: '/ui/a-run' },
+        { text: 'What it will not do', link: '/ui/limits' },
+      ],
+    },
+  ],
+  '/reference/': [
+    {
+      text: 'Reference',
+      items: [
+        { text: 'Matchers', link: '/reference/matchers' },
+        { text: 'Generators', link: '/reference/generators' },
+        { text: 'CLI flags', link: '/reference/cli' },
+        { text: 'Diagnostic codes', link: '/reference/diagnostics' },
+      ],
+    },
+  ],
+  // Fallback for every standalone page with no more-specific key above (grammar.md,
+  // editor.md, playground/index.md, changelog.md) — without this, those pages
+  // render with no left sidebar at all (`hasSidebar` false), which reads as inconsistent
+  // chrome next to guide/reference's sidebar + "On this page" two-column layout. VitePress
+  // resolves the longest matching path prefix, so this never overrides the more specific keys
+  // above.
+  '/': [
+    {
+      text: 'More',
+      items: [
+        { text: 'Grammar', link: '/grammar' },
+        { text: 'Editor support', link: '/editor' },
+        { text: 'Playground', link: '/playground' },
+        { text: 'Changelog', link: '/changelog' },
+      ],
+    },
+  ],
+};

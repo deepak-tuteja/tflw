@@ -328,9 +328,10 @@ jobs:
       # `github-slug.test.mjs`; that corpus is refreshed by hand, and only the comparison runs here.
       - run: npm run verify:anchors
 
-      # Every internal anchor on the docs site resolves to a real heading (M62/DT-07), and every
-      # page renders the sidebar it belongs to (M125e/`FU-30`). Separate from `npm test` because
-      # both read the built `.vitepress/dist` — the root `npm run build` above already produced it.
+      # Every internal anchor on the docs site resolves to a real heading (M62/DT-07), every page
+      # renders the sidebar it belongs to (M125e/`FU-30`), and every URL the site has published —
+      # page and heading id — still resolves (`M269`, `D1441`). Separate from `npm test` because all
+      # three read the built `packages/docs-site/dist` — the root `npm run build` above produced it.
       # Here rather than only in docs.yml so a pull request sees a broken link or a wrong rail too:
       # docs.yml runs on pushes to main, after review.
       - run: npm run test:links -w @tflw/docs-site
@@ -552,6 +553,11 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # `M269` (`D1447`): the whole workspace, dev dependencies included, at high. Until the docs
+      # site left VitePress this was red by known cause (vite 5 under VitePress 1.x, with no fix in
+      # that line), which is why it lands with the migration and not before it.
+      - name: No high-or-worse advisory anywhere in the workspace
+        run: npm audit --audit-level=high
       # `M268` (`D1447`, `D1450`): what ships is what the bundles inlined, and only the build knows
       # that — each bundle's metafile, the same one the notice file is generated from.
       - run: npm run build

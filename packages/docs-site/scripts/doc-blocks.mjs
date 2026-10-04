@@ -41,10 +41,11 @@ export const DECLARED_UNCHECKED = new Map([
 
 export function findMarkdownFiles(dir, out = []) {
   for (const name of readdirSync(dir).sort()) {
-    if (name === 'node_modules' || name === '.vitepress' || name.startsWith('.')) continue;
+    if (name === 'node_modules' || name.startsWith('.')) continue;
     const path = join(dir, name);
     if (statSync(path).isDirectory()) findMarkdownFiles(path, out);
-    else if (name.endsWith('.md')) out.push(path);
+    // `.mdx` since `M269`: the two pages that mount Vue islands are MDX, and they are pages.
+    else if (/\.mdx?$/.test(name)) out.push(path);
   }
   return out;
 }
@@ -402,8 +403,8 @@ export function scanRoadmapClaims(files, { allowlist = DECLARED_ROADMAP, phrases
  * stops describing it and the scan says so rather than continuing to skip a page full of prose.
  */
 export const INCLUDED_RECORDS = new Map([
-  ['changelog.md', { include: '../../CHANGELOG.md', why: 'CHANGELOG.md, declared and linked to DECISIONS.md at its head' }],
-  ['grammar.md', { include: '../lang/GRAMMAR.md', why: 'packages/lang/GRAMMAR.md, declared and linked to DECISIONS.md at its head' }],
+  ['changelog.md', { include: '../../../../../CHANGELOG.md', why: 'CHANGELOG.md, declared and linked to DECISIONS.md at its head' }],
+  ['grammar.md', { include: '../../../../lang/GRAMMAR.md', why: 'packages/lang/GRAMMAR.md, declared and linked to DECISIONS.md at its head' }],
 ]);
 
 /**
@@ -412,12 +413,12 @@ export const INCLUDED_RECORDS = new Map([
  * Every other check here walks `findMarkdownFiles(ROOT)` and nothing else, and for this check that
  * would place the guard where the class has *never* been fully visible:
  *
- *  - **`README.md` is unreachable** from `ROOT`. It sits at the repo root and is `srcExclude`d from
- *    the site. `M135b` — the precedent proving this class recurs — fired *in `README.md`*, and so
+ *  - **`README.md` is unreachable** from `ROOT`. It sits at the repo root, outside the site's
+ *    pages. `M135b` — the precedent proving this class recurs — fired *in `README.md`*, and so
  *    did two of the five occurrences `M149a` swept. A guard placed where the class last fired that
  *    cannot see the file it fired in is a guard against the wrong thing.
  *  - **`CHANGELOG.md` is unreachable** too, and for a subtler reason: `changelog.md` on disk is a
- *    header plus `<!--@include: ../../CHANGELOG.md-->`. The body arrives at VitePress build time,
+ *    header plus `<!--@include: …/CHANGELOG.md-->`. The body arrives at the site's build time,
  *    so a scanner reading markdown files sees a 233-byte stub and reports the page as clean.
  *
  * The shims are therefore located relative to `root` rather than to this script, so a scratch
@@ -428,7 +429,8 @@ export const INCLUDED_RECORDS = new Map([
  * verification on import, so nothing there can be unit-tested at all.
  */
 export function roadmapFiles(root, included = INCLUDED_RECORDS) {
-  const repo = join(root, '..', '..');
+  // The pages sit at `packages/docs-site/src/content/docs` (`M269`), five levels below the repo.
+  const repo = join(root, '..', '..', '..', '..', '..');
   // `relKey`, not a slice of the path (`M259-07`): `DECLARED_ROADMAP`'s page keys are written with
   // `/`, and a slice carries Windows' `\`, so the first page entries (`runbook/install.md`, `M259`)
   // matched nothing there and their declared sentences read as undeclared. `M243-16` fixed the
@@ -444,7 +446,7 @@ export function roadmapFiles(root, included = INCLUDED_RECORDS) {
     if (existsSync(path)) files.push({ key: relKey(repo, path), path });
   }
   // `README.md` is hand-added and stays that way, because it is a different case wearing the same
-  // shape: it is unreachable because the site `srcExclude`s it, not because it is a stub. Nothing
+  // shape: it is unreachable because it is outside the site's pages, not because it is a stub. Nothing
   // in `INCLUDED_RECORDS` describes it, and putting it there to save a line would claim it is an
   // `@include` page — which `assertShim` would then, correctly, deny.
   const readme = join(repo, 'README.md');
@@ -466,8 +468,9 @@ function fencedLines(text) {
 /**
  * The 1-based line numbers inside a `<script …>` block.
  *
- * VitePress pages open with `<script setup>` to pull in a generated table, and those blocks carry
- * ordinary source comments. A comment in a Vue SFC is not prose a reader meets — it never renders —
+ * The reference pages open with `<script setup>` to pull in a generated table (written for VitePress,
+ * rendered by `src/lib/markdown.mjs` since `M269`), and those blocks carry ordinary source comments.
+ * A comment there is not prose a reader meets — it never renders —
  * so it is excluded for the same reason `D697` excludes a product fence: it is not a citation
  * aimed at anybody.
  */

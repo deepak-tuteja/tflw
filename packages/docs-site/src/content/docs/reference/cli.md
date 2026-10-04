@@ -70,7 +70,7 @@ tflw's own generator process saturated — the numbers describe tflw contending 
 system under test; every threshold's junit `<testcase>` comes back `skipped`, not passed/failed),
 `130` = aborted via Ctrl-C (the standard "died from SIGINT" code).
 
-::: tip A flag that takes a value must be given one
+:::tip[A flag that takes a value must be given one]
 `tflw run --evidence` with nothing after it — or with another `--flag` in the value slot — exits
 `2` with a usage error rather than quietly falling back to the default. That default is `full`,
 the least protective evidence level, so a flag that lost its argument to a CI YAML fold used to
@@ -78,7 +78,7 @@ produce a full-detail artifact and a green pipeline. Use `--flag=value` for a va
 does start with `--`.
 :::
 
-::: warning An empty value is not "no filter"
+:::caution[An empty value is not "no filter"]
 `--tag ""` and `--tag=` exit `2` as well. An empty value asks for *nothing*, so tflw refuses it
 rather than running everything: `--tag` and `--only` narrow a run, and an empty one used to be
 indistinguishable from leaving the flag off — widening the run to the whole suite, at exit `0`,

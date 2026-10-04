@@ -4342,7 +4342,7 @@ packages/
   vscode/    highlighting + run CodeLens (P#94) + a `LanguageClient` that spawns
              `tflw lsp` — the editor's diagnostics come from the language server, not from
              parsing `tflw check --format json` output
-  docs-site/ the VitePress documentation site (P#103), deployed to GitHub Pages; imports
+  docs-site/ the Astro Starlight documentation site (P#103), deployed to GitHub Pages; imports
              lang/'s own manifests so its reference pages cannot drift from the tool
 ```
 

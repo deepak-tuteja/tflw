@@ -5,20 +5,21 @@
 // page the home page's primary CTA points at. The entrance to the guide showed everything except
 // the guide.
 //
-// Checked against the **built** HTML, not against `config.ts`. The bug was invisible in the config
-// — every key there is correct in isolation — and only appears once VitePress resolves a path
-// against them. A check that read the config would be asking the wrong question in the same words.
+// Checked against the **built** HTML, not against `src/sidebar.mjs`. The bug was invisible in the
+// config — every key there is correct in isolation — and only appears once a path is resolved
+// against them (`src/route-data.ts` since `M269`, VitePress before it). A check that read the config
+// would be asking the wrong question in the same words.
 //
 // Deliberately a small allowlist rather than a general rule. "Which rail should this page show" is
-// an editorial decision per page, and the only mechanical version of it would re-implement
-// VitePress's longest-prefix resolution here — which is what shipped the bug.
+// an editorial decision per page, and the only mechanical version of it would re-implement the
+// longest-prefix resolution here — which is what shipped the bug.
 
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('..', import.meta.url));
-const DIST = process.env.TFLW_DOCS_DIST ?? join(ROOT, '.vitepress/dist');
+const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('../src/content/docs', import.meta.url));
+const DIST = process.env.TFLW_DOCS_DIST ?? fileURLToPath(new URL('../dist', import.meta.url));
 
 /** `page` → the sidebar group heading it must show, and the one it must not.
  *
@@ -58,16 +59,17 @@ const EXPECTED = [
   { page: 'runbook/troubleshoot.html', shows: 'Runbook', hides: 'More' },
 ];
 
-/** Each pillar overview is reachable from the rail, and it is the group's own title that reaches it.
+/** Each pillar overview is reachable from the rail, as the first entry under its group's title.
  *
  * `D654`/`M149c`. An overview page nothing links to is the failure `FU-30` above is about, arrived
  * at from the other direction: there the rail was wrong, here the rail would be silently missing an
  * entry. Three pages are one config key away from being reachable only by the pager.
  *
- * Asserted against the built HTML for the same reason the rows above are: whether a sidebar group
- * carrying both `link` and `items` renders its title as an anchor at all is VitePress's decision,
- * not the config's. It does in 1.6.4 — `<a class="link" href="…"><h2 class="text">…</h2></a>` — and
- * a major upgrade that changed it would leave a config that still reads correctly.
+ * `M269`: VitePress drew a group carrying both `link` and `items` with its title as the anchor. A
+ * Starlight group has no link of its own, so `src/lib/navigation.mjs` makes the overview the group's
+ * first entry, labelled `Overview` — still the thing the chapters are under, read first. Asserted
+ * against the built HTML for the same reason as before: how a group is drawn is the theme's
+ * decision, not the config's.
  *
  * The href is matched by suffix, including the closing quote, so the check does not hardcode
  * `base` and `/guide/security"` cannot be satisfied by `/guide/security-scanning"`.
@@ -79,14 +81,14 @@ const PILLAR_OVERVIEWS = [
   // existing group is exactly the edit that silently lands in the wrong rail, and the pre-split
   // row could not have caught it.
   { page: 'guide/load-results.html', link: '/guide/performance', group: 'Performance testing' },
-  // A bare `&`, not `&amp;`: VitePress renders a sidebar label through `v-html`, so the config's
-  // text reaches the HTML unescaped. Written `&amp;` first, and the demonstrated break for the row
-  // above caught it — this row failed while nothing was wrong with the rail.
-  { page: 'guide/crawling.html', link: '/guide/security', group: 'Security & vulnerability testing' },
+  // `&amp;`, not a bare `&`: Starlight escapes a sidebar label as text (VitePress rendered it through
+  // `v-html`, unescaped, and this row said `&` until `M269`).
+  { page: 'guide/crawling.html', link: '/guide/security', group: 'Security &amp; vulnerability testing' },
 ];
 
 /**
- * The rendered `<aside class="VPSidebar">` alone.
+ * The rendered sidebar alone — Starlight's `<sl-sidebar-pane>` (VitePress's `<aside class="VPSidebar">`
+ * until `M269`).
  *
  * Counting `>Guide<` across the whole page is how the bug was first *measured* (`getting-started`
  * had one occurrence, `guide/first-test` two — the difference being the nav's own copy), but it is
@@ -95,9 +97,9 @@ const PILLAR_OVERVIEWS = [
  * actually about.
  */
 function sidebarOf(html) {
-  const start = html.indexOf('<aside class="VPSidebar"');
+  const start = html.indexOf('<sl-sidebar-pane');
   if (start === -1) return '';
-  const end = html.indexOf('</aside>', start);
+  const end = html.indexOf('</sl-sidebar-pane>', start);
   return html.slice(start, end === -1 ? undefined : end);
 }
 
@@ -137,15 +139,16 @@ for (const { page, link, group } of PILLAR_OVERVIEWS) {
     continue;
   }
   const sidebar = sidebarOf(html);
-  const at = sidebar.indexOf(`${link}"`);
-  if (at === -1) {
+  const title = sidebar.indexOf(`>${group}<`);
+  const first = title === -1 ? null : /href="([^"]*)"[^>]*>\s*<span[^>]*>([^<]*)</.exec(sidebar.slice(title));
+  if (!sidebar.includes(`${link}"`)) {
     console.error(`✗ ${page} — the rail has no link to the ${group} overview (${link})`);
     failures++;
-  } else if (!sidebar.slice(at, at + 300).includes(`>${group}<`)) {
-    // The link exists but something other than the group title carries it — an overview demoted to
-    // an ordinary item beside the chapters it introduces, which is the other way `D654` can be
-    // lost without breaking a link.
-    console.error(`✗ ${page} — ${link} is in the rail, but not as the "${group}" group title`);
+  } else if (first === null || !first[1].endsWith(link) || first[2] !== 'Overview') {
+    // The link exists but not as the group's first entry — an overview demoted to an ordinary item
+    // among the chapters it introduces, which is the other way `D654` can be lost without breaking
+    // a link.
+    console.error(`✗ ${page} — ${link} is in the rail, but not as the "${group}" group's Overview`);
     failures++;
   } else {
     console.log(`✓ ${page} — ${group} → ${link}`);

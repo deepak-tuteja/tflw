@@ -3,10 +3,10 @@
 //
 // A page that tells a newcomer what to type is a claim about what happens when they type it, and
 // the only check of that claim is typing it. So every fence in a walkthrough chapter
-// (`packages/docs-site/runbook/start/`) tagged ` ```sh runbook ` is **executed**:
+// (`packages/docs-site/src/content/docs/runbook/start/`) tagged ` ```sh runbook ` is **executed**:
 //
 //   - in one fresh temp directory for the whole walkthrough, chapter after chapter in
-//     `.vitepress/walkthrough.mjs`'s order, so the directory accumulates state the way a reader's
+//     `src/lib/walkthrough.mjs`'s order, so the directory accumulates state the way a reader's
 //     does — a `cd` in one fence, or an `export`, holds for the next;
 //   - against the CLI packed from the tree under test (`npm pack -w tflw`, or `TFLW_TGZ` when the
 //     caller already packed one), which reaches the fences as `$TFLW_TGZ`, the variable chapter 1's
@@ -14,7 +14,7 @@
 //   - with `bash -e -o pipefail`, so a fence passes only if every line in it does.
 //
 // The text is read **as the site renders it today**: of a page's `<Published>` twins, only the one
-// `PUBLISHED` (`.vitepress/published.ts`) selects is run, so before 1.0 the gate runs the pre-1.0
+// `PUBLISHED` (`src/lib/published.ts`) selects is run, so before 1.0 the gate runs the pre-1.0
 // path (`D1419`), and on publish day the other one, with no change here.
 //
 // A ` ```text runbook-output ` fence directly after a command is that command's **expected output**,
@@ -48,10 +48,12 @@ import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { extractBlocks } from '../packages/docs-site/scripts/doc-blocks.mjs';
-import { WALKTHROUGH } from '../packages/docs-site/.vitepress/walkthrough.mjs';
+import { WALKTHROUGH } from '../packages/docs-site/src/lib/walkthrough.mjs';
 
 const REPO = fileURLToPath(new URL('..', import.meta.url));
-const DOCS = join(REPO, 'packages', 'docs-site');
+const SITE = join(REPO, 'packages', 'docs-site');
+// `M269`: the pages are Starlight's content collection.
+const DOCS = join(SITE, 'src', 'content', 'docs');
 const START = join(DOCS, 'runbook', 'start');
 const FIXTURES = join(REPO, 'scripts', 'fixtures', 'runbook');
 
@@ -147,9 +149,9 @@ export function readChapter(page, published) {
 }
 
 export function readPublished() {
-  const src = readFileSync(join(DOCS, '.vitepress', 'published.ts'), 'utf8');
+  const src = readFileSync(join(SITE, 'src', 'lib', 'published.ts'), 'utf8');
   const m = /^export const PUBLISHED = (true|false);$/m.exec(src);
-  if (!m) throw new Error('`.vitepress/published.ts` no longer declares `PUBLISHED` as a literal — read it here the way the site does');
+  if (!m) throw new Error('`src/lib/published.ts` no longer declares `PUBLISHED` as a literal — read it here the way the site does');
   return m[1] === 'true';
 }
 

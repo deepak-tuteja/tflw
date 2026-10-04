@@ -1,17 +1,16 @@
+import HighlightingDemo from '../../components/editor/HighlightingDemo.vue';
+import DiagnosticsHoverDemo from '../../components/editor/DiagnosticsHoverDemo.vue';
+import AutocompleteDemo from '../../components/editor/AutocompleteDemo.vue';
+import GoToDefinitionDemo from '../../components/editor/GoToDefinitionDemo.vue';
+import RenameDemo from '../../components/editor/RenameDemo.vue';
+import SignatureHelpDemo from '../../components/editor/SignatureHelpDemo.vue';
+
 # Editor support
 
-<script setup>
-// `ClientOnly` is a default-theme global component — no import needed (same as playground/index.md).
-// Every widget below runs the *real* @tflw/lang / @tflw/lsp-server/pure logic client-side — the
-// same functions the LSP itself calls — against an editable or fixed .tflw sample. Not screenshots,
-// not staged: genuinely live (decision 107).
-import HighlightingDemo from './editor/HighlightingDemo.vue';
-import DiagnosticsHoverDemo from './editor/DiagnosticsHoverDemo.vue';
-import AutocompleteDemo from './editor/AutocompleteDemo.vue';
-import GoToDefinitionDemo from './editor/GoToDefinitionDemo.vue';
-import RenameDemo from './editor/RenameDemo.vue';
-import SignatureHelpDemo from './editor/SignatureHelpDemo.vue';
-</script>
+{/* Every widget below runs the *real* @tflw/lang / @tflw/lsp-server/pure logic client-side — the
+    same functions the LSP itself calls — against an editable or fixed .tflw sample. Not
+    screenshots, not staged: genuinely live. Each is an island (`client:only`),
+    because each needs the browser. */}
 
 `tflw lsp` is a real [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
 implementation — diagnostics, hover, go-to-definition, autocomplete, rename, signature help, and
@@ -56,9 +55,7 @@ depends on how much semantic-token coverage your theme defines; VS Code's own bu
 is sparser here than a fuller theme like One Dark Pro, but the extension never overrides your
 theme's colors, it only supplies the tokens for your theme to color):
 
-<ClientOnly>
-  <HighlightingDemo />
-</ClientOnly>
+<HighlightingDemo client:only="vue" />
 
 ## Diagnostics + hover
 
@@ -67,9 +64,7 @@ Diagnostics update live as you type — the same teaching-quality errors the CLI
 [CI, reporting & safety](/guide/ci-and-reporting)), surfaced as inline squiggles. Hover over one for
 the full message and hint without leaving the line:
 
-<ClientOnly>
-  <DiagnosticsHoverDemo />
-</ClientOnly>
+<DiagnosticsHoverDemo client:only="vue" />
 
 ## Autocomplete
 
@@ -80,36 +75,28 @@ In `tflw.config` too, which has its own vocabulary: the top-level directives, th
 in the block you're in (a `defaults` block is never offered an `env`-only key, or the other way
 round), and the `probe …` sub-clauses under an `authorized target`.
 
-<ClientOnly>
-  <AutocompleteDemo />
-</ClientOnly>
+<AutocompleteDemo client:only="vue" />
 
 ## Go to definition
 
 Jump from a variable, parameter, or action reference straight to where it's defined — across
 `import`ed files too:
 
-<ClientOnly>
-  <GoToDefinitionDemo />
-</ClientOnly>
+<GoToDefinitionDemo client:only="vue" />
 
 ## Rename
 
 Rename a variable, parameter, or action everywhere it's used — including inside string and path
 interpolation holes (`"{name}"`, `/orders/{orderId}`) — in one edit:
 
-<ClientOnly>
-  <RenameDemo />
-</ClientOnly>
+<RenameDemo client:only="vue" />
 
 ## Signature help
 
 A parameter hint while calling an action, so you don't have to jump to its definition to remember
 its shape:
 
-<ClientOnly>
-  <SignatureHelpDemo />
-</ClientOnly>
+<SignatureHelpDemo client:only="vue" />
 
 ## Run from the editor
 

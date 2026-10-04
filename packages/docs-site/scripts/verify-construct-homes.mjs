@@ -23,7 +23,7 @@ import { constructCorpus, relKey, constructMatchers, findMarkdownFiles } from '.
 import { CONSTRUCT_HOMES, homesAreComplete } from './construct-homes.mjs';
 import * as manifests from '@tflw/lang';
 
-const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('..', import.meta.url));
+const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('../src/content/docs', import.meta.url));
 
 export function scanConstructHomes({ files, constructs, manifests: mans, homes = CONSTRUCT_HOMES }) {
   const corpus = constructCorpus(files, mans);

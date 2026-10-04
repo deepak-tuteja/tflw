@@ -54,7 +54,7 @@ the rest is the implementation and the evidence behind the numbers above.
 | `packages/cli` | The `tflw` command itself — what `npm i -D tflw` installs. Own [README](packages/cli/README.md) (what ships in the npm package) |
 | `packages/lsp-server` | The Language Server behind `tflw lsp` — diagnostics, hover, go-to-definition, completion, rename, signature help, semantic tokens |
 | `packages/vscode` | VS Code extension: an LSP client over `packages/lsp-server`, plus TextMate syntax highlighting and snippets |
-| `packages/docs-site` | [The documentation site](https://deepak-tuteja.github.io/tflw/) (VitePress), deployed to GitHub Pages |
+| `packages/docs-site` | [The documentation site](https://deepak-tuteja.github.io/tflw/) (Astro Starlight), deployed to GitHub Pages |
 | `examples/dogfood` | Worked `.tflw` files exercising the full grammar together (sessions, hooks, actions, data tables) — used as regression fixtures, and a good place to see real, larger examples beyond this README |
 
 See [CHANGELOG.md](CHANGELOG.md) for released versions.

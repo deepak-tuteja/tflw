@@ -247,7 +247,7 @@ door instead, a public collection would trip the no-power-to-fail rule above —
 authorization rules are already not-applicable on an array — and a crawl of any public API would come
 back red.
 
-::: tip It is narrower than "everybody got a 2xx"
+:::tip[It is narrower than "everybody got a 2xx"]
 Only `anonymous` landing in **`leaked`** counts. A `2xx` that carried *none* of the owner's resources
 is `served different content`, which is a route scoping correctly for strangers and still capable of
 leaking to a logged-in peer — so the leak rules keep judging it. And a route that answers `401` to a

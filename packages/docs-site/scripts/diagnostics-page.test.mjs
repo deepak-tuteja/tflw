@@ -36,7 +36,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DIAGNOSTICS } from '@tflw/lang';
 
-const PAGE = fileURLToPath(new URL('../reference/diagnostics.md', import.meta.url));
+const PAGE = fileURLToPath(new URL('../src/content/docs/reference/diagnostics.md', import.meta.url));
 const source = readFileSync(PAGE, 'utf8');
 
 test('the diagnostics reference sources its table from the DIAGNOSTICS manifest', () => {

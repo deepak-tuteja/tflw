@@ -1,23 +1,25 @@
 // Every internal anchor link on the docs site resolves to a real heading (M62, DT-07).
 //
-// M65 shipped three broken ones. VitePress keeps the em-dash when it generates a heading id —
+// M65 shipped three broken ones. The site keeps the em-dash when it generates a heading id —
 // `## Evidence levels — how much lands in the report` becomes `#evidence-levels-—-how-much-…` —
 // and two new links assumed it was stripped, while a renamed heading stale-ified a third. A broken
 // anchor lands the reader at the top of a long page with no error and no clue, which is why this
 // is a doc-truth check and not a nicety.
 //
-// Ids come from the **built** HTML rather than a slugifier reimplemented here. Guessing how
-// VitePress slugifies is the exact mistake being guarded against — a local copy of that rule would
-// have had the same em-dash bug, and agreed with itself.
+// Ids come from the **built** HTML rather than a slugifier reimplemented here. Guessing how the
+// site slugifies is the exact mistake being guarded against — a local copy of that rule would have
+// had the same em-dash bug, and agreed with itself. (`M269` kept VitePress's rule on Starlight, in
+// `src/lib/slug.mjs`; this still reads the output, not that file.)
 
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Both overridable so this script's own tests can run it against a fixture site (see DT-08).
-const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('..', import.meta.url));
-const DIST = process.env.TFLW_DOCS_DIST ?? join(ROOT, '.vitepress/dist');
-const BASE = '/tflw'; // config.ts `base` — raw <a href> in markdown carries it, `](/…)` links don't.
+// `M269`: the pages are Starlight's content collection, and the build is `dist/` beside them.
+const ROOT = process.env.TFLW_DOCS_ROOT ?? fileURLToPath(new URL('../src/content/docs', import.meta.url));
+const DIST = process.env.TFLW_DOCS_DIST ?? fileURLToPath(new URL('../dist', import.meta.url));
+const BASE = '/tflw'; // astro.config.mjs `base` — raw <a href> in markdown carries it, `](/…)` links don't.
 
 async function walk(dir, keep, out = []) {
   let entries;
@@ -27,7 +29,7 @@ async function walk(dir, keep, out = []) {
     return out;
   }
   for (const e of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (e.name === 'node_modules' || e.name === 'assets' || e.name.startsWith('.')) continue;
+    if (e.name === 'node_modules' || e.name === '_astro' || e.name === 'pagefind' || e.name.startsWith('.')) continue;
     const path = join(dir, e.name);
     if (e.isDirectory()) await walk(path, keep, out);
     else if (keep(e.name)) out.push(path);
@@ -56,12 +58,12 @@ for (const page of pages) {
 }
 
 const problems = [];
-const sources = await walk(ROOT, (n) => n.endsWith('.md'));
+const sources = await walk(ROOT, (n) => /\.mdx?$/.test(n));
 
 for (const source of sources) {
   const rel = relative(ROOT, source).split(sep).join('/');
   const lines = (await readFile(source, 'utf8')).split('\n');
-  const self = '/' + rel.replace(/\.md$/, '').replace(/\/?index$/, '');
+  const self = '/' + rel.replace(/\.mdx?$/, '').replace(/\/?index$/, '');
   for (let i = 0; i < lines.length; i++) {
     const links = [
       // Markdown links: `](/guide/x#frag)` and same-page `](#frag)`.
