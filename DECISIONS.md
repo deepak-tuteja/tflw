@@ -15007,4 +15007,31 @@ dismissals, no overrides. Two milestones: **M268** fixes everything except the d
 both repositories; **M269** moves the docs site from VitePress to Astro Starlight, which removes the
 last vulnerable vite from the tree. Scoped 2026-10-04 by grilling (8 questions, §9).
 
+### M269b
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M268_SUPPLY_CHAIN.md`</sub>
+
+**M269b — the layout the move did not check (tflw)**
+
+Found after merge, from the owner's screenshot of `/ui/`, and then by a side-by-side of all 61 pages:
+the last VitePress build (`9876715`) against the Starlight one, at 390, 1440 and 1920, in both themes.
+M269 proved every address and heading id survived and nothing looked at where things land. The
+side-by-side found four regressions, each a VitePress-layout rule carried into Starlight's:
+
+- **The `/ui/` shots crossed the "On this page" rail at every width, and the sidebar below 1600px.**
+  This hit 9 pages. VitePress centres its text column; Starlight puts it one pad short of the rail.
+  So the old ±80px breakout always lands on the rail. Fix: a shot grows only towards the sidebar,
+  into what the pane has left (the pane is a size container). That is up to 160px at 1920 and almost
+  nothing at 1440.
+- **The home page scrolled 540px sideways at every width.** The hero's dot field is `inset: -2rem
+  -50vw`, and VitePress's hero container clipped it. Fix: the panel holding the hero clips (`overflow-x:
+  clip`).
+- **Every page's canonical link and `og:url` read `…/x.html/`.** Starlight formats `build.format:
+  'preserve'` as if it were `'directory'`. Fix: the route middleware writes the served address,
+  `…/guide/config`, `…/ui/`, `…/`.
+- **The Playground and the six editor demos were styled with `--vp-*` variables (54 uses).** Starlight
+  defines none of them, so the playground editor had no ground, no edge and no monospace face. Fix:
+  Starlight's tokens; the mono face falls back to `--sl-font-system-mono`, because `--sl-font-mono` is
+  an override hook and unset.
+
 <!-- GENERATED:decisions:end -->

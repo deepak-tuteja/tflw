@@ -47,29 +47,29 @@ const diagnostics = computed(() => {
 
 <style scoped>
 .playground {
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
   padding: 1rem;
 }
 .hint {
   margin-top: 0;
   font-size: 0.85rem;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-size: 0.9rem;
   padding: 0.75rem;
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
-  background: var(--vp-code-block-bg);
-  color: var(--vp-c-text-1);
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
 }
 .ok {
   margin-top: 0.75rem;
-  color: var(--vp-c-brand-1);
+  color: var(--sl-color-text-accent);
   font-weight: 600;
 }
 .diagnostics {
@@ -81,7 +81,7 @@ textarea {
 }
 .diagnostics .span {
   display: block;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
   font-size: 0.8rem;
 }
 </style>

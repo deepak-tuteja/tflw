@@ -80,7 +80,7 @@ const preview = computed(() => {
 
 <style scoped>
 .rename-demo {
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -89,27 +89,27 @@ const preview = computed(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid var(--vp-c-divider);
-  background: var(--vp-code-block-bg);
+  border-bottom: 1px solid var(--sl-color-hairline);
+  background: var(--sl-color-gray-6);
   font-size: 0.85rem;
   min-height: 1.5rem;
 }
 .hint {
   margin: 0;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 .toolbar input {
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   padding: 0.2rem 0.5rem;
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
-  background: var(--vp-c-bg);
-  color: var(--vp-c-text-1);
+  background: var(--sl-color-bg);
+  color: var(--sl-color-white);
 }
 .toolbar button {
   margin-left: auto;
   font-size: 0.8rem;
-  color: var(--vp-c-brand-1);
+  color: var(--sl-color-text-accent);
   background: none;
   border: none;
   cursor: pointer;
@@ -121,7 +121,7 @@ const preview = computed(() => {
   overflow-x: auto;
   background: #1e1e1e;
   color: #d4d4d4;
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-size: 0.85rem;
   line-height: 1.6;
 }

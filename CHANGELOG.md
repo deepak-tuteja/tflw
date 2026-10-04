@@ -17,6 +17,16 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Fixed — the docs site's layout after the move (M269b)
+
+- **The UI section's screenshots no longer run over the sidebar or the "On this page" rail.** They
+  widen only into space the page has to spare.
+- **The home page no longer scrolls sideways.**
+- **Each page's canonical link and `og:url` are its real address** (`…/guide/config`), not one that
+  does not exist (`…/guide/config.html/`).
+- **The playground and the editor demos have their surfaces back**: the playground's editor has
+  its own ground, an edge and a monospace face in both themes.
+
 ### Changed — the docs site runs on Starlight (M269)
 
 - **The documentation site is built with Astro Starlight instead of VitePress.** VitePress 1.x is

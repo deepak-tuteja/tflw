@@ -63,25 +63,25 @@ const help = computed(() => {
 
 <style scoped>
 .sighelp-demo {
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
   padding: 1rem;
 }
 .hint {
   margin: 0 0 0.75rem;
   font-size: 0.85rem;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-size: 0.9rem;
   padding: 0.75rem;
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
-  background: var(--vp-code-block-bg);
-  color: var(--vp-c-text-1);
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
 }
 .popup {
   margin-top: 0.5rem;
@@ -90,7 +90,7 @@ textarea {
   background: #252526;
   border: 1px solid #454545;
   color: #cccccc;
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-size: 0.85rem;
 }
 .popup .active {
@@ -100,6 +100,6 @@ textarea {
 .none {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 </style>

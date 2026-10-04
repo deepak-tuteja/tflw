@@ -50,33 +50,33 @@ const candidates = computed(() => {
 
 <style scoped>
 .autocomplete-demo {
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
   padding: 1rem;
 }
 .hint {
   margin: 0 0 0.75rem;
   font-size: 0.85rem;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 textarea {
   width: 100%;
   box-sizing: border-box;
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-size: 0.9rem;
   padding: 0.75rem;
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
-  background: var(--vp-code-block-bg);
-  color: var(--vp-c-text-1);
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
 }
 .dropdown {
   margin: 0.5rem 0 0;
   padding: 0.25rem;
   list-style: none;
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
-  background: var(--vp-c-bg-soft);
+  background: var(--sl-color-gray-6);
 }
 .dropdown li {
   display: flex;
@@ -86,20 +86,20 @@ textarea {
   border-radius: 4px;
 }
 .dropdown li:hover {
-  background: var(--vp-c-default-soft);
+  background: var(--sl-color-gray-5);
 }
 .dropdown .label {
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-weight: 600;
-  color: var(--vp-c-brand-1);
+  color: var(--sl-color-text-accent);
 }
 .dropdown .detail {
   font-size: 0.8rem;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 .none {
   margin: 0.5rem 0 0;
   font-size: 0.8rem;
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 </style>

@@ -61,7 +61,7 @@ const chunks = computed(() => splitAtSpans(SOURCE, ranges));
 
 <style scoped>
 .highlighting-demo {
-  border: 1px solid var(--vp-c-divider);
+  border: 1px solid var(--sl-color-hairline);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -71,7 +71,7 @@ const chunks = computed(() => splitAtSpans(SOURCE, ranges));
   overflow-x: auto;
   background: #1e1e1e;
   color: #d4d4d4;
-  font-family: var(--vp-font-family-mono);
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
   font-size: 0.85rem;
   line-height: 1.6;
 }
@@ -82,8 +82,8 @@ const chunks = computed(() => splitAtSpans(SOURCE, ranges));
   margin: 0;
   padding: 0.75rem 1rem;
   list-style: none;
-  border-top: 1px solid var(--vp-c-divider);
-  background: var(--vp-code-block-bg);
+  border-top: 1px solid var(--sl-color-hairline);
+  background: var(--sl-color-gray-6);
 }
 .legend li {
   display: flex;
@@ -92,7 +92,7 @@ const chunks = computed(() => splitAtSpans(SOURCE, ranges));
   font-size: 0.8rem;
 }
 .legend .label {
-  color: var(--vp-c-text-2);
+  color: var(--sl-color-gray-2);
 }
 .swatch {
   width: 0.7rem;
