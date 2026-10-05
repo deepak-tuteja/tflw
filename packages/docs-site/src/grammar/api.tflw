@@ -4,8 +4,8 @@ test "API steps"
   api POST /orders body from "./fixtures/order.json"
   api POST /notes body text "plain words"
   api POST /graphql body graphql "query O($id: ID!) { order(id: $id) { id } }" variables { id: {orderId} } operation "O"
-  api POST /login form email = "a@b.c", password = "secret"
-  api POST /tickets/42/attachments upload "./before.png" as "files" type "image/png" form title = "Checkout"
+  api POST /login form email="a@b.c", password="secret"
+  api POST /tickets/42/attachments upload "./before.png" as "files" type "image/png" form title="Checkout"
   api billing GET /invoices timeout 5s without redirects
   api POST /payments
     header "Idempotency-Key" is unique("pay")
