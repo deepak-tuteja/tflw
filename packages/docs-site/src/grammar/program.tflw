@@ -1,0 +1,21 @@
+import "./shared/orders.tflw"
+use "./helpers/label.ts"
+element cartBadge = css "[data-test=cart-count]"
+
+action create order(name, qty)
+  api POST /orders body { name: {name}, qty: {qty} }
+
+before file
+  log "once, before the first test in this file"
+
+before
+  log "before every test"
+
+test "adds a widget to the cart"
+  create order("Widget", 1)
+
+after
+  log "after every test"
+
+after file
+  log "once, after the last test"

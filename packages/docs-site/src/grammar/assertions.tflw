@@ -1,0 +1,23 @@
+test "what a response, a page or a request can be checked for"
+  expect status equals 201
+  check body.total equals 42
+  expect duration is less than 800ms
+  expect body.total is greater than 0
+  expect header "content-type" matches "application/json"
+  expect body.items has count at least 1
+  expect body.items has count at most 10
+  expect body matches subset { id: 1 }
+  expect body matches schema "Order" from "/openapi.json"
+  expect body bytes matches file "./receipt.png"
+  expect body pdf text contains "Invoice"
+  expect body text contains "created"
+  expect body.errors is empty
+  expect body.name is not empty
+  expect request fails matching "certificate"
+  expect status of request to "/api/orders" with method "POST" equals 201
+  expect request to "/api/orders" was made
+  expect page has no serious a11y violations
+  expect page matches snapshot "checkout" mask css ".timestamp"
+  expect dialog message equals "Really delete?"
+  expect text "Order placed" is visible
+  expect field "Email" has value "a@b.c"

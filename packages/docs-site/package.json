@@ -7,7 +7,7 @@
   "scripts": {
     "brand": "node scripts/generate-brand-assets.mjs",
     "dev": "astro dev",
-    "build": "astro build",
+    "build": "astro build --force",
     "preview": "astro preview",
     "test": "node --test scripts/*.test.mjs && node scripts/verify-docs.mjs && node scripts/verify-construct-homes.mjs",
     "test:links": "node scripts/verify-links.mjs && node scripts/verify-sidebars.mjs && node scripts/verify-url-parity.mjs && node scripts/verify-url-parity.mjs --self-test"

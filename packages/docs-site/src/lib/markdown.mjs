@@ -12,8 +12,8 @@
 //  - `<Published>…</Published>` and `<Published :when="false">…</Published>` (`M253` `F`) — kept or
 //    dropped by `PUBLISHED`, at build time, the way the Vue component did it at render time.
 //  - `<script setup>` + `<table>` with a `v-for` row — the reference tables, parsed by the same
-//    `parseScript`/`parseTable` that `gen-docs.mjs` uses for the terminal, and drawn from
-//    `spec-data.ts` with the same `code()` the Vue pages called.
+//    `parseScript`/`parseTable` that `gen-docs.mjs` uses for the terminal, with rows from
+//    `spec-data.ts`, drawn as entries rather than tables since `M270` (`entries.mjs`).
 //  - `![…](…){.light-only}` — a class on a picture (`M233` `I`).
 //  - `## Heading {#id}` — an explicit anchor.
 //
@@ -29,19 +29,19 @@
 //    Astro leaves markdown links alone, so every internal link would 404 on GitHub Pages.
 
 import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseScript, parseTable } from '../../../cli/scripts/gen-docs.mjs';
 import * as SPEC from '../../../lang/src/spec-data.ts';
-import { code } from './mdCode.ts';
+import { renderEntries, unfenced } from './entries.mjs';
+import { changelogPage } from './changelog.mjs';
+import { grammarPage } from './grammar.mjs';
 import { PUBLISHED } from './published.ts';
 import { vitepressSlug } from './slug.mjs';
 
 const BASE = '/tflw';
 
 // ---- helpers ------------------------------------------------------------------------------------
-
-const escapeHtml = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
 /** Every node under `node`, depth first, with its parent. */
 function* walk(node, parent = null) {
@@ -58,21 +58,11 @@ function headingText(node) {
 
 // ---- the reference tables -----------------------------------------------------------------------
 
-function renderCell(col, row) {
-  const v = row[col.key];
-  if (col.form === 'markdown') return `<td>${code(v ?? '')}</td>`;
-  if (col.form === 'code') return `<td><code>${escapeHtml(v ?? '')}</code></td>`;
-  if (col.form === 'status') return `<td>${escapeHtml(v === col.when ? col.yes : col.no)}</td>`;
-  return `<td>${escapeHtml(v ?? '')}</td>`;
-}
-
-/** A `parseTable` description → the table, drawn from the live manifest. */
-export function renderTable({ table }) {
+/** A `parseTable` description → its rows from the live manifest, filtered as the page's script says. */
+export function rowsOf({ table }) {
   const rows = (SPEC[table.source] ?? []).filter((r) => !table.where || r[table.where.key] === table.where.value);
-  if (rows.length === 0) throw new Error(`a reference table over ${table.source} has no rows — the page would draw an empty table`);
-  const head = table.cols.map((c) => `<th>${escapeHtml(c.label)}</th>`).join('');
-  const body = rows.map((r) => `<tr>${table.cols.map((c) => renderCell(c, r)).join('')}</tr>`).join('\n');
-  return `<table>\n<thead><tr>${head}</tr></thead>\n<tbody>\n${body}\n</tbody>\n</table>`;
+  if (rows.length === 0) throw new Error(`a reference table over ${table.source} has no rows — the page would draw nothing`);
+  return rows;
 }
 
 // ---- remark: the page constructs ----------------------------------------------------------------
@@ -93,7 +83,12 @@ export function remarkTflwPages() {
       if (!m) return [node];
       if (!page) throw new Error(`@include: ${m[1]} in a page with no path`);
       const target = resolve(dirname(page), m[1]);
-      return processor.parse(readFileSync(target, 'utf8')).children;
+      const children = processor.parse(readFileSync(target, 'utf8')).children;
+      // `M270`: the grammar record is published section by section, each opened by its glance, and
+      // the changelog with its newest entries open and the rest folded.
+      if (basename(target) === 'GRAMMAR.md') return grammarPage(children, m[1]);
+      if (basename(target) === 'CHANGELOG.md') return changelogPage(children, m[1]);
+      return children;
     });
 
     // 2. `<Published>` blocks: kept (the tags dropped) or removed whole.
@@ -117,20 +112,33 @@ export function remarkTflwPages() {
     if (open !== null) throw new Error(`${page}: an unclosed <Published>`);
     tree.children = kept;
 
-    // 3. `<script setup>` filters, then each `v-for` table drawn from them.
+    // 3. `<script setup>` filters, then each `v-for` table drawn from them — as entries (`M270`,
+    //    `entries.mjs`). A CLI section's synopsis is the code paragraph straight above its table
+    //    when the page writes one, and its command is the heading above that.
     let consts = {};
-    tree.children = tree.children.flatMap((node) => {
-      if (node.type !== 'html') return [node];
-      const value = node.value.trim();
+    const drawn = [];
+    for (const node of tree.children) {
+      const value = node.type === 'html' ? node.value.trim() : '';
       if (value.startsWith('<script setup>')) {
         consts = { ...consts, ...parseScript(value) };
-        return [];
+        continue;
       }
-      if (value.startsWith('<table>') && value.includes('v-for=')) {
-        return [{ type: 'html', value: renderTable(parseTable(value, consts)) }];
+      if (!(value.startsWith('<table>') && value.includes('v-for='))) {
+        drawn.push(node);
+        continue;
       }
-      return [node];
-    });
+      const table = parseTable(value, consts);
+      const above = drawn.at(-1);
+      const written =
+        above?.type === 'paragraph' && above.children.length === 1 && above.children[0].type === 'inlineCode' && above.children[0].value.startsWith('tflw ')
+          ? above.children[0].value
+          : undefined;
+      if (written !== undefined) drawn.pop();
+      const section = drawn.findLast((n) => n.type === 'heading' && n.depth === 2);
+      const command = section === undefined ? undefined : unfenced(headingText(section));
+      drawn.push(...renderEntries(table, rowsOf(table), { written, command }));
+    }
+    tree.children = drawn;
 
     // 4. Headings: an explicit `{#id}`, else VitePress's slug; the first `# H1` counted, then dropped.
     const seen = new Set();
@@ -153,6 +161,9 @@ export function remarkTflwPages() {
           id = unique(m[1], true);
         }
       }
+      // An entry heading (`entries.mjs`) arrives with its id already chosen, and it is explicit.
+      const preset = node.data?.hProperties?.id;
+      if (id === null && preset !== undefined) id = unique(preset, true);
       id ??= unique(vitepressSlug(headingText(node)), false);
       node.data = { ...node.data, hProperties: { ...node.data?.hProperties, id } };
       if (node.depth === 1 && title === null) title = node;

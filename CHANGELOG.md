@@ -17,6 +17,26 @@ Everything below is built and verified but not yet published — it ships as par
 is gated on the pen-test arc plus one final integrated acceptance pass (P#112). The
 performance arc closed 2026-08-02 and is included below.
 
+### Changed — the docs site's long pages are read by their rail (M270)
+
+- **Diagnostic codes**: one entry per code, under the stage that reports it (lexer, parser,
+  checker, config, load, runtime). Each opens with what the code means, shows every snippet that
+  triggers it and what `tflw check` prints for it, and has a link of its own (`…#tf041`). The "On
+  this page" rail lists every code, and a filter at the top narrows the page by code or by word.
+- **Grammar**: each section opens with the lines you can write, highlighted; the formal productions
+  follow, folded. Every production is still on the page.
+- **CLI flags**: each command opens with its synopsis, and each flag is on a line of its own with
+  its effect beneath. **Matchers** and **Generators** are one entry each, with their example as a
+  line of `tflw`.
+- **Playground**: an editor with highlighting, line numbers, each mistake marked on its line and
+  linked to its diagnostic, and four starting points. It runs every check `tflw check` judges a
+  single file by, and says which codes need your project to be reported.
+- **Changelog**: the newest ten entries are open; the earlier ones are folded, and a link to one
+  opens its fold.
+- **Fixed:** bold and emphasis in the reference pages' generated text showed as raw `**` and `*`.
+- **Fixed:** in `tflw ui`, opening a `capture … matching "<regex>"` statement and closing it untouched
+  no longer drops its pattern, which turned the capture of an id into a capture of the whole value.
+
 ### Fixed — the docs site's layout after the move (M269b)
 
 - **The UI section's screenshots no longer run over the sidebar or the "On this page" rail.** They

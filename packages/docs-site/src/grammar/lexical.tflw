@@ -1,0 +1,8 @@
+# a comment runs to the end of the line
+@smoke @checkout
+test "strings, numbers, durations and paths"
+  let name = "Widget \u{2013} blue"
+  let folder = "C:\\orders\\{name}"
+  let price = 12.5
+  api GET /orders?status=open&page=2
+  pause 500ms

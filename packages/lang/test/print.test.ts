@@ -356,8 +356,12 @@ test('every printable node in the corpus re-parses to the node it was printed fr
   // `G1`/`G3`: the printer corpus's concurrent race (its test, `together`, two api steps and two
   // `expect`s) and the example's `before file`, two-tabs race and the test judging it. 598 -> 618.
   // `M260-01`: `checkout.tflw`'s two idempotency keys are minted per run, one `let` each. 618 -> 620.
-  const EXPECTED_NODES = 620;
-  const EXPECTED_FILES = 28;
+  // `M270`: the Grammar page's ten glances, written to show every form a section admits, so they are
+  // dense in nodes by design. 620 -> 795.
+  const EXPECTED_NODES = 795;
+  // `M270`: the Grammar page's ten glances (`packages/docs-site/src/grammar/*.tflw`), written to be
+  // whole files so that this corpus, the editor and a reader's paste all read them as one: 28 -> 38.
+  const EXPECTED_FILES = 38;
   assert.equal(filesRead, EXPECTED_FILES, `the corpus read ${filesRead} files, expected ${EXPECTED_FILES} — a fixture was added or lost`);
   assert.equal(total, EXPECTED_NODES, `the corpus round-tripped ${total} nodes, expected ${EXPECTED_NODES} — move the number in the change that moved the corpus`);
   assert.deepEqual(mismatches, [], `\n${mismatches.slice(0, 10).join('\n\n')}\n`);
@@ -479,7 +483,8 @@ test('every clean file in the corpus round-trips through the printer whole', () 
   // `M216` — `examples/storefront/tests/checkout.tflw`: 18 -> 19.
   // `M234` `C` — the example's seven new files, every one of which round-trips whole: 19 -> 26.
   // `M240` `A` — the same two files, both round-tripping whole: 26 -> 28.
-  const EXPECTED_CORPUS_FILES = 28;
+  // `M270` — the Grammar page's ten glances, every one round-tripping whole: 28 -> 38.
+  const EXPECTED_CORPUS_FILES = 38;
   assert.equal(
     corpusRoundTripped,
     EXPECTED_CORPUS_FILES,

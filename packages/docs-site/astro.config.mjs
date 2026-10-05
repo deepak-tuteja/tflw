@@ -50,6 +50,11 @@ function indexPagesInPlace() {
   };
 }
 
+// `M270`: `npm run build` is `astro build --force`. Astro caches each page's rendered HTML keyed on
+// the page's own text, and the reference pages draw their content from `spec-data.ts` through
+// `src/lib/markdown.mjs`, neither of which is in that key. So on any machine with a warm cache, a new
+// diagnostic code, or a change to how entries are drawn, built a page from the previous render. A
+// fresh CI checkout never saw it; every local and box build did.
 export default defineConfig({
   // Deployed to https://deepak-tuteja.github.io/tflw/ (a project subpath, not the domain root).
   site: 'https://deepak-tuteja.github.io',

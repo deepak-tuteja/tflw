@@ -52,7 +52,7 @@ test('an unclosed <Published> is refused, not rendered half-open', async () => {
   await assert.rejects(render('# P\n\n<Published>\n\nx\n'), /unclosed <Published>/);
 });
 
-test('a reference table is drawn from the live manifest, escaped by code()', async () => {
+test('a reference table is drawn from the live manifest as entries (`M270`), one heading per row', async () => {
   const page = [
     '# Matchers',
     '',
@@ -61,10 +61,11 @@ test('a reference table is drawn from the live manifest, escaped by code()', asy
     '</script>',
     '',
     '<table>',
-    '  <thead><tr><th>Matcher</th><th>Status</th></tr></thead>',
+    '  <thead><tr><th>Matcher</th><th>Example</th><th>Status</th></tr></thead>',
     '  <tbody>',
     '    <tr v-for="m in MATCHERS" :key="m.id">',
     '      <td v-html="code(m.syntax)" />',
+    '      <td v-html="code(m.example)" />',
     "      <td>{{ m.status === 'shipped' ? '✅' : '🔮' }}</td>",
     '    </tr>',
     '  </tbody>',
@@ -72,9 +73,34 @@ test('a reference table is drawn from the live manifest, escaped by code()', asy
     '',
   ].join('\n');
   const html = await render(page);
-  assert.equal((html.match(/<tr>/g) ?? []).length - 1, MATCHERS.length, 'one row per matcher, plus the heading row');
-  assert.doesNotMatch(html, /v-for|v-html|\{\{|<script/);
-  assert.match(html, /<td>✅<\/td>/);
+  assert.equal((html.match(/<h3 /g) ?? []).length, MATCHERS.length, 'one entry heading per matcher');
+  for (const m of MATCHERS) assert.match(html, new RegExp(`<h3 id="${m.id}"`), `${m.id} has its own anchor`);
+  assert.equal((html.match(/<pre><code class="language-tflw">/g) ?? []).length, MATCHERS.length, 'each example is a tflw block');
+  assert.doesNotMatch(html, /<table|v-for|v-html|\{\{|<script/);
+});
+
+test('a reference column the entries do not draw fails the build, by name', async () => {
+  // The terminal's table and the site's entries read one declaration. A column added for the
+  // terminal must not vanish from the site without anyone being told.
+  const page = [
+    '# Matchers',
+    '',
+    '<script setup>',
+    "import { MATCHERS } from '../../lang/src/spec-data.ts';",
+    '</script>',
+    '',
+    '<table>',
+    '  <thead><tr><th>Matcher</th><th>Subjects</th></tr></thead>',
+    '  <tbody>',
+    '    <tr v-for="m in MATCHERS" :key="m.id">',
+    '      <td v-html="code(m.syntax)" />',
+    '      <td>{{ m.subjects }}</td>',
+    '    </tr>',
+    '  </tbody>',
+    '</table>',
+    '',
+  ].join('\n');
+  await assert.rejects(render(page), /declares subjects, which its entries do not draw/);
 });
 
 test('headings: VitePress ids, an explicit {#id}, `-1` for a repeat, and the # H1 counted then dropped', async () => {

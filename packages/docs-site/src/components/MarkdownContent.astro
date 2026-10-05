@@ -1,8 +1,9 @@
 ---
-// `M269` (`D1443`) — Starlight's content wrapper, plus the page's `pageClass`. Two pages-wide hooks
+// `M269` (`D1443`) — Starlight's content wrapper, plus the page's `pageClass`. Three pages-wide hooks
 // earn one: `ui-shots` (the `/ui/` pages and the walkthrough's chapter on the page, whose screenshots
-// break out of the text column) and `grammar-page` (wrap the EBNF rather than hide it behind a
-// scrollbar). Both are in `src/styles/custom.css`, with their reasons.
+// break out of the text column), `grammar-page` (each section's formal productions folded under
+// its glance) and `reference-page` (`M270`: the reference pages drawn as entries). All three are in
+// `src/styles/custom.css`, with their reasons.
 import Default from '@astrojs/starlight/components/MarkdownContent.astro';
 
 const { pageClass } = Astro.locals.starlightRoute.entry.data;
@@ -72,4 +73,79 @@ const { pageClass } = Astro.locals.starlightRoute.entry.data;
     if (event.key === 'Escape') close();
   });
   window.addEventListener('scroll', close, { passive: true });
+</script>
+
+<script>
+  /**
+   * **The diagnostics filter** — `M270` (`D-M270-3`). Narrows the page's entries to those whose text
+   * holds every word typed, so `session` or `timeout tab` each find their codes, and a code (`TF041`,
+   * or the start of one) finds that code. No dependency and no index: 87 entries are read off the
+   * page once.
+   *
+   * An entry is an `h3.tflw-entry` (inside the wrapper Starlight puts round a heading) and everything
+   * after it up to the next entry or stage heading. A stage heading is hidden when none of its
+   * entries is shown, so the page never shows an empty section.
+   */
+  const input = document.querySelector<HTMLInputElement>('#tflw-filter-input');
+  const content = input?.closest('.sl-markdown-content');
+  if (input && content) {
+    const isEntry = (e: Element): boolean => e.matches('h3.tflw-entry') || e.querySelector(':scope > h3.tflw-entry') !== null;
+    const isStage = (e: Element): boolean => e.matches('h2') || e.querySelector(':scope > h2') !== null;
+    type Entry = { parts: Element[]; text: string; code: string };
+    const stages: { head: Element; entries: Entry[] }[] = [];
+    let entry: Entry | null = null;
+    for (const child of [...content.children]) {
+      if (isStage(child)) {
+        stages.push({ head: child, entries: [] });
+        entry = null;
+      } else if (isEntry(child) && stages.length > 0) {
+        entry = { parts: [child], text: '', code: (child.matches('h3') ? child : child.querySelector('h3'))?.id ?? '' };
+        stages.at(-1)?.entries.push(entry);
+      } else if (entry !== null) entry.parts.push(child);
+    }
+    const all = stages.flatMap((s) => s.entries);
+    for (const e of all) e.text = e.parts.map((p) => p.textContent ?? '').join(' ').toLowerCase();
+    const output = content.querySelector('.tflw-filter output');
+
+    const apply = (): void => {
+      const words = input.value.toLowerCase().split(/\s+/).filter((w) => w !== '');
+      let shown = 0;
+      for (const stage of stages) {
+        let any = false;
+        for (const e of stage.entries) {
+          // A word shaped like a code (`tf04`, `TF041`) means that code, not every entry that mentions
+          // it: TF042's text names TF041, and a reader typing TF041 wants TF041.
+          const match = words.every((w) => (/^tf\d{0,3}$/.test(w) ? e.code.startsWith(w) : e.text.includes(w)));
+          for (const p of e.parts) p.classList.toggle('tflw-filtered', !match);
+          if (match) {
+            any = true;
+            shown++;
+          }
+        }
+        stage.head.classList.toggle('tflw-filtered', !any);
+      }
+      if (output) output.textContent = words.length === 0 ? '' : `${shown} of ${all.length} codes`;
+    };
+    input.addEventListener('input', apply);
+  }
+</script>
+
+<script>
+  /**
+   * **A link into a fold opens it** — `M270` (`D-M270-6`). The Changelog folds every entry after the
+   * newest few, and each keeps its heading id, so a link to one lands — but on a heading inside a
+   * closed `<details>`, which the browser cannot scroll to. This opens the fold that holds the
+   * target and brings it into view, on load and whenever the hash changes.
+   */
+  const reveal = (): void => {
+    const id = decodeURIComponent(location.hash.slice(1));
+    if (id === '') return;
+    const target = document.getElementById(id);
+    const fold = target?.closest('details');
+    if (target === null || fold === null || fold === undefined || fold.open) return;
+    fold.open = true;
+    target.scrollIntoView();
+  };
+  reveal();
+  window.addEventListener('hashchange', reveal);
 </script>

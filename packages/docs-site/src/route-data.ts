@@ -4,6 +4,7 @@
 // page and recomputes previous/next from it, so the footer links stay inside the section the
 // reader is in, as they did before.
 import { defineRouteMiddleware } from '@astrojs/starlight/route-data';
+import { EARLIER } from './lib/changelog.mjs';
 import { sectionFor } from './lib/navigation.mjs';
 
 type Entry = { type: 'link' | 'group'; label: string; isCurrent?: boolean; entries?: Entry[] };
@@ -24,7 +25,27 @@ export const onRequest = defineRouteMiddleware(({ locals, site }) => {
     next: (at >= 0 && at < flat.length - 1 ? flat[at + 1] : undefined) as typeof route.pagination.next,
   };
   route.head = withAddress(route.head, path, site);
+  if (route.toc !== undefined) route.toc = { ...route.toc, items: openOnly(route.toc.items) };
 });
+
+type TocItem = { slug: string; text: string; depth: number; children: TocItem[] };
+
+/**
+ * The rail lists what the page shows open (`M270`, `D-M270-6`). On the Changelog the entries after
+ * the newest few sit in a fold (`src/lib/changelog.mjs`): they keep their headings and ids, so a link
+ * still lands, but listing all 90 on the rail is what made it useless. So under the release that
+ * holds the *Earlier changes* heading the rail stops there, and a release after it lists no entries.
+ * Every other page has no such heading and its rail is untouched.
+ */
+export function openOnly<T extends TocItem>(items: T[]): T[] {
+  const at = items.findIndex((i) => i.children.some((c) => c.slug === EARLIER));
+  if (at === -1) return items;
+  return items.map((item, i) => {
+    if (i < at) return item;
+    if (i === at) return { ...item, children: item.children.slice(0, item.children.findIndex((c) => c.slug === EARLIER) + 1) };
+    return { ...item, children: [] };
+  });
+}
 
 /**
  * The page's own address, in the canonical link and `og:url`. Starlight formats the canonical for

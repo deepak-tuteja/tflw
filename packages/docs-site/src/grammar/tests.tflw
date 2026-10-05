@@ -1,0 +1,23 @@
+@smoke
+test "sees only its own orders" as shopper, admin retry 2 parallel
+  api GET /orders
+  expect status equals 200
+
+test "refunds settle" skip "no payments sandbox in CI" on env ci
+  api POST /refunds
+
+with each
+  | name     | price |
+  | "Widget" | 10    |
+  | "Gadget" | 25    |
+test "creates {name}" sequential
+  api POST /products body { name: {name}, price: {price} }
+
+with each from "./data/coupons.csv" concurrently
+test "redeems {code} once"
+  together
+  api POST /coupons/{code}/redeem
+rows
+  expect exactly 1 row status equals 201
+  expect at most 1 rows status equals 409
+  expect every row duration is less than 2s

@@ -78,6 +78,6 @@ test('the manifest this page renders is non-trivial', () => {
   assert.ok(DIAGNOSTICS.length > 40, `DIAGNOSTICS holds only ${DIAGNOSTICS.length} rows — too few for this page's claim to mean anything`);
   assert.ok(
     DIAGNOSTICS.every((d) => /^TF\d{3}$/.test(d.code) && d.meaning && d.example),
-    'a DIAGNOSTICS row is missing a code, a meaning or an example — this page renders all three columns unconditionally, so a hole here renders as a blank cell',
+    'a DIAGNOSTICS row is missing a code, a meaning or an example — this page draws an entry from all three unconditionally (`M270`), so a hole here renders as an entry with nothing in it',
   );
 });

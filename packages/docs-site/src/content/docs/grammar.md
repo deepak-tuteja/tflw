@@ -4,10 +4,16 @@ pageClass: grammar-page
 
 # Grammar
 
-The formal EBNF-ish grammar reference, straight from
-[`packages/lang/GRAMMAR.md`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/GRAMMAR.md)
-— included here rather than duplicated, so this page is always a verbatim copy of the file the
-language front-end itself is documented against. That file's own currency is enforced separately, by
-a test asserting every keyword the parser recognizes has a production in it.
+What you can write in a `.tflw` file and in `tflw.config`, section by section. Each section opens
+with the forms as you would type them; the formal productions and the rules behind them follow,
+folded.
+
+The productions are
+[`packages/lang/GRAMMAR.md`](https://github.com/deepak-tuteja/tflw/blob/main/packages/lang/GRAMMAR.md),
+and every one of them is on this page. A test fails the build when the parser recognises a keyword
+that file has no production for. Cross-references inside the productions are `(§n)` for a section of
+[SPEC.md](https://github.com/deepak-tuteja/tflw/blob/main/SPEC.md), and `(P#n)`, `(D<n>)` and
+`(M<n>)` for the decision or milestone behind a rule; each resolves in
+[DECISIONS.md](https://github.com/deepak-tuteja/tflw/blob/main/DECISIONS.md).
 
 <!--@include: ../../../../lang/GRAMMAR.md-->

@@ -23,7 +23,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { code } from '../src/lib/mdCode.ts';
+import { inline as code } from '../src/lib/mdCode.ts';
 import { DIAGNOSTICS, MATCHERS, GENERATORS, CLI_FLAGS } from '@tflw/lang';
 
 // ---- 1. the two fences -------------------------------------------------------------------------
@@ -124,12 +124,15 @@ test('every rendered manifest value survives the helper with balanced tags and n
   // stray backtick escaping its span) and `M147-12` (a placeholder escaping as a tag).
   for (const [where, v] of rendered) {
     const out = code(v);
-    const opens = (out.match(/<code>/g) ?? []).length;
-    const closes = (out.match(/<\/code>/g) ?? []).length;
-    assert.equal(opens, closes, `${where}: unbalanced <code> in ${out}`);
+    // `M270`: the helper emits `<strong>` and `<em>` as well as `<code>`, each balanced.
+    for (const tag of ['code', 'strong', 'em']) {
+      const opens = (out.match(new RegExp(`<${tag}>`, 'g')) ?? []).length;
+      const closes = (out.match(new RegExp(`</${tag}>`, 'g')) ?? []).length;
+      assert.equal(opens, closes, `${where}: unbalanced <${tag}> in ${out}`);
+    }
     // Strip the tags this helper is allowed to emit; nothing angular may remain, inside a span or
     // outside one, since escaping runs before the fence pass.
-    const bare = out.replaceAll('<code>', '').replaceAll('</code>', '');
+    const bare = out.replace(/<\/?(?:code|strong|em)>/g, '');
     assert.doesNotMatch(bare, /[<>]/, `${where}: unescaped angle bracket in ${out}`);
     // Backticks are checked only OUTSIDE a span. A doubled fence keeps its inner backticks on
     // purpose — that is what it is for, and the unit case above pins it — so a blanket "no backtick
@@ -148,4 +151,57 @@ test('the placeholders are still legible after escaping, not merely absent', () 
   const envFlag = CLI_FLAGS.find((f) => f.flag.includes('--env'));
   assert.ok(envFlag, 'the CLI manifest no longer has an --env flag; re-point this case');
   assert.match(code(envFlag.flag), /&lt;name&gt;/);
+});
+
+// ---- 4. strong and emphasis (`M270`, `D-M270-7`) -----------------------------------------------
+
+test('a ** pair is strong, a * pair is emphasis', () => {
+  assert.equal(code('a **b** c'), 'a <strong>b</strong> c');
+  assert.equal(code('a *b* c'), 'a <em>b</em> c');
+});
+
+test('strong wraps code, and the code keeps its own stars', () => {
+  // TF043's shape: the whole sentence is strong and starts inside a code span.
+  assert.equal(code('**`import` and `use` are an error**'), '<strong><code>import</code> and <code>use</code> are an error</strong>');
+  assert.equal(code('`a ** b` and `*x*`'), '<code>a ** b</code> and <code>*x*</code>');
+});
+
+test('a star that is not a delimiter stays a star', () => {
+  // The control for the two cases above: a renderer that turned every star into markup would pass
+  // both and fail these.
+  assert.equal(code('3 * 4'), '3 * 4');
+  assert.equal(code('a * b * c'), 'a * b * c');
+  assert.equal(code('a lone * here'), 'a lone * here');
+  assert.equal(code('glob*star'), 'glob*star');
+});
+
+test('two strong runs in one value are two, not one spanning the text between them', () => {
+  assert.equal(code('**a** then **b**'), '<strong>a</strong> then <strong>b</strong>');
+});
+
+test('the private-use character the helper holds code spans with never reaches the page', () => {
+  for (const [where, v] of rendered) assert.doesNotMatch(code(v), /\uE000/, where);
+  assert.ok(rendered.every(([, v]) => !v.includes('\uE000')), 'a manifest value carries U+E000; pick another hold mark');
+});
+
+test('nothing markdown-like survives rendering any manifest value (`D-M270-7`)', () => {
+  // The gate the plan names: before `M270`, 101 raw `**` reached the site. Strong, emphasis and code
+  // are the manifests' whole vocabulary; a fourth construct fails here, by name, rather than leaking.
+  const leaks = [];
+  for (const [where, v] of rendered) {
+    const text = code(v).replace(/<code>[\s\S]*?<\/code>/g, '').replace(/<\/?(?:strong|em)>/g, '');
+    for (const [what, re] of [['**', /\*\*/], ['*emphasis*', /(?<![\w*])\*\S[^*]*\S?\*(?![\w*])/], ['_emphasis_', /(?<![\w])_\S[^_]*_(?![\w])/], ['[link](', /\]\(/], ['`', /`/]]) {
+      if (re.test(text)) leaks.push(`${where}: ${what} in ${text.slice(0, 80)}`);
+    }
+  }
+  assert.deepEqual(leaks, []);
+});
+
+test('the gate above can fire: an underscore emphasis and a link are reported', () => {
+  // Its vacuity control. Neither construct is in the manifests today, which is the point: the gate's
+  // patterns are run against a value that has them.
+  const text = (v) => code(v).replace(/<code>[\s\S]*?<\/code>/g, '');
+  assert.match(text('see _this_'), /(?<![\w])_\S[^_]*_(?![\w])/);
+  assert.match(text('see [x](/y)'), /\]\(/);
+  assert.match(text('a ** b'), /\*\*/);
 });

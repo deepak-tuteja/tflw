@@ -404,7 +404,9 @@ export function scanRoadmapClaims(files, { allowlist = DECLARED_ROADMAP, phrases
  */
 export const INCLUDED_RECORDS = new Map([
   ['changelog.md', { include: '../../../../../CHANGELOG.md', why: 'CHANGELOG.md, declared and linked to DECISIONS.md at its head' }],
-  ['grammar.md', { include: '../../../../lang/GRAMMAR.md', why: 'packages/lang/GRAMMAR.md, declared and linked to DECISIONS.md at its head' }],
+  // `M270`: the record's productions are published folded under each section's glance, and its history
+  // preamble is not; the page's own header now carries the notation declaration and the DECISIONS.md link.
+  ['grammar.md', { include: '../../../../lang/GRAMMAR.md', why: 'packages/lang/GRAMMAR.md\'s productions, folded by section; declared and linked to DECISIONS.md in the page\'s header' }],
 ]);
 
 /**

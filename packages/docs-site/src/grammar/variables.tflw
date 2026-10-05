@@ -1,0 +1,23 @@
+test "values, captures and logs"
+  let email = unique email
+  let id = unique uuid
+  let sku = unique("SKU")
+  let code = unique like "[A-Z]{3}-[0-9]{4}"
+  let n = unique number
+  let qty = random number 1 to 100
+  let price = random decimal 5 to 50
+  let placed = random date in past
+  let due = random date in future
+  let window = random date between "2026-01-01" and "2026-12-31"
+  let word = random like "[a-z]{8}"
+  let nonce = random string 12
+  let token = base64 encode("{email}:secret")
+  let raw = hex decode("68656c6c6f")
+  let q = url encode("a b")
+  let total = {price} * {qty}
+  let ids = [1, 2, 3]
+  let csv = {ids} joined with ","
+  capture body.id as orderId
+  capture header "location" matching "/orders/(\\d+)" as orderPath
+  log "created order {orderId}"
+  log warn "stock is running low"

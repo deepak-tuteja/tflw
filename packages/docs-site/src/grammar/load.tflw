@@ -1,0 +1,27 @@
+test "the catalogue holds up when everyone arrives at once"
+  ramp to 50 users over 30s
+  api GET /products
+  threshold p95 duration is less than 800ms
+  threshold error rate is less than 1%
+
+test "a steady rate"
+  hold 20 rps for 2m
+  api GET /health
+
+test "in steps"
+  step users
+    to 10 for 30s
+    to 50 for 1m
+  api GET /products
+  threshold p99 duration for "GET /products" is less than 1500ms
+
+test "a spike"
+  spike rps
+    hold 10 for 30s
+    to 200 over 10s
+  api GET /search
+
+test "a fixed amount of work"
+  run 100 iterations per user across 50 users
+  api GET /cart
+  pause 1s to 3s

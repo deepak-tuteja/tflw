@@ -15034,4 +15034,17 @@ side-by-side found four regressions, each a VitePress-layout rule carried into S
   Starlight's tokens; the mono face falls back to `--sl-font-system-mono`, because `--sl-font-mono` is
   an override hook and unset.
 
+### M270
+
+<sub>cited from CHANGELOG.md · lifted from `PLAN_M270_DOCS_READING.md`</sub>
+
+**PLAN_M270 — the docs site's reference pages, made readable (tflw)**
+
+Scoped 2026-10-04 by grilling, after M269b. The site's longest pages were hard to read: Grammar
+was the language's formal grammar from end to end, the Reference pages were tables that broke a
+step across lines of a narrow cell, Diagnostics was one table with no headings (so its "On this
+page" rail listed nothing), and the Changelog's rail listed all 90 entries. M269b fixed the
+Playground's barely visible editor, which was a regression; nothing else here is: each page read the
+same way on VitePress (§1). This plan redraws them for reading.
+
 <!-- GENERATED:decisions:end -->
