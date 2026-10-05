@@ -83,7 +83,18 @@ export function buildStatement(next: StatementEdit, original: Step | null): Buil
         const from = original as CaptureStmt | null;
         const out = buildCapture({ subject: subjectSpecOf(next.subject, next.argument, next.locatorKind, from?.subject ?? null), name: next.name });
         if (!out.ok) return out;
-        return { ok: true, node: { ...out.node, subject: next.subject === 'carried' && from !== null ? from.subject : out.node.subject } };
+        // `matching "<regex>"` (`M242`) has no field in the form, so it goes back on from the node, as
+        // a snapshot's `mask`s do above. Rebuilt without it, opening the row and closing it untouched
+        // wrote `capture header "location" as id` over `… matching "/orders/(\\d+)" as id`, and the
+        // test captured the whole header instead of the id (`M270-01`).
+        return {
+          ok: true,
+          node: {
+            ...out.node,
+            subject: next.subject === 'carried' && from !== null ? from.subject : out.node.subject,
+            ...(from?.pattern !== undefined ? { pattern: from.pattern } : {}),
+          },
+        };
       }
       case 'let':
         return buildLet({ name: next.name, value: next.value });

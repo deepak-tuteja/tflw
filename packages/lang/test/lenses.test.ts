@@ -179,7 +179,10 @@ test('every test in the corpus classifies, and a third of them land in more than
   // is reached in-repo. 89 -> 90.
   // `G1`/`G3`: the printer corpus's concurrent race (1) and the example's two-tabs race and the
   // test that judges it (2). 90 -> 93.
-  const EXPECTED_TESTS = 93;
+  // `M270`: the Grammar page's glances (`packages/docs-site/src/grammar/`), ten whole `.tflw` files
+  // a reader can paste — twelve tests in the six that were files from the start, and one each in the
+  // four step glances, which are wrapped in a `test` so that they are files too. 93 -> 109.
+  const EXPECTED_TESTS = 109;
   assert.equal(mine.total, EXPECTED_TESTS,
     `the corpus classified ${mine.total} tests, expected ${EXPECTED_TESTS} — move the number in the change that moved the corpus`);
 

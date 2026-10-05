@@ -1,0 +1,12 @@
+import "./shared/orders.tflw"
+use "./helpers/label.ts"
+
+action create order(name, qty)
+  api POST /orders body { name: {name}, qty: {qty} }
+  capture body.id as id
+  give {id}
+
+test "reuses an action and a JS helper"
+  let id = create order("Widget", 2)
+  let text = label({id})
+  api GET /orders/{id}

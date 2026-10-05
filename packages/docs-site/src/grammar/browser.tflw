@@ -1,0 +1,30 @@
+test "driving a page"
+  open "/checkout"
+  click button "Add to cart"
+  double click text "Row 1"
+  right click text "Row 1"
+  fill field "Email" with {email}
+  select "Blue" from field "Colour"
+  tick field "Accept terms"
+  untick field "Newsletter"
+  press "Enter" on field "Search"
+  hover button "Menu"
+  scroll to text "Load more"
+  drag text "First" to text "Second"
+  drop file "./receipt.png" onto css "#dropzone"
+  click xpath "//tr[2]/td[1]"
+  within list "Cart items"
+    click button "Remove"
+  within frame css "#payment-frame"
+    fill field "Card number" with "4242 4242 4242 4242"
+  switch to new tab
+    click text "View receipt"
+  switch to tab 1
+  close tab
+  accept dialog with "Blue"
+  dismiss dialog
+  download as receipt
+    click button "Download PDF"
+  wait until text "Saved" is visible for 2s
+  screenshot "after payment"
+  stub POST "/api/payments/**" respond status 500 body { error: "gateway down" }

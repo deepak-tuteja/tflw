@@ -242,15 +242,28 @@
   text-decoration: none;
 }
 
-/* ---------- /grammar: wrap long EBNF lines instead of hiding them ---------- */
-/* PLAN_DOCS_SITE_UPDATE.md decision 5: packages/lang/GRAMMAR.md (included verbatim) has EBNF lines
-   over 100 characters, whose trailing `# comment` annotations were cut off behind a scrollbar.
-   Scoped to this one page by `pageClass: grammar-page`, trading the `:=`/`|` alignment on the lines
-   that wrap for nothing ever being hidden. */
-.grammar-page pre,
-.grammar-page code {
-  white-space: pre-wrap !important;
-  word-break: break-word;
+/* ---------- /grammar: the formal productions, folded under each section's glance ---------- */
+/* `M270` (`D-M270-2`). Each section opens with the forms a reader can write; the record's EBNF and
+   rules follow in a `<details>`. The EBNF scrolls rather than wrapping: `M269`'s `pre-wrap` broke
+   every long production's trailing `# comment` mid-line, which cost the `:=`/`|` alignment the
+   blocks are laid out by. Scoped by `pageClass: grammar-page`. */
+.grammar-page details.tflw-formal {
+  margin-top: 0.75rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 6px;
+  padding: 0.25rem 1rem;
+}
+
+.grammar-page details.tflw-formal > summary {
+  cursor: pointer;
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-2);
+  padding-block: 0.5rem;
+}
+
+.grammar-page details.tflw-formal[open] > summary {
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--sl-color-hairline);
 }
 
 /* ---------- /ui: one screenshot per theme, not both ---------- */
@@ -342,4 +355,172 @@
   to {
     opacity: 1;
   }
+}
+
+/* ---------- the reference pages as entries (`M270`, `D-M270-3`, `D-M270-4`) ---------- */
+/* `src/lib/entries.mjs` draws Matchers, Generators, CLI flags and Diagnostics as entries: a heading
+   per item, small tags for what it applies to, and its example as a one-line `tflw` block. Scoped by
+   `pageClass: reference-page`. A heading's code is set in mono without the chip, because there the
+   whole heading is the name: a chip per heading was the "large inline-code chip" on every CLI
+   section. */
+.reference-page :is(h2, h3) code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 0.9em;
+  color: inherit;
+}
+
+.reference-page h2 code {
+  font-family: inherit;
+}
+
+.reference-page .sl-heading-wrapper:has(> h3.tflw-entry) {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--sl-color-hairline);
+}
+
+.reference-page h3.tflw-entry {
+  font-size: var(--sl-text-lg);
+  line-height: 1.4;
+}
+
+.reference-page .tflw-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+
+.reference-page .tflw-tag {
+  font-size: var(--sl-text-xs);
+  line-height: 1.6;
+  padding: 0 0.5rem;
+  border: 1px solid var(--sl-color-hairline);
+  border-radius: 999px;
+  color: var(--sl-color-gray-2);
+}
+
+.reference-page .tflw-tag code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+
+.reference-page .tflw-badge {
+  border-color: var(--sl-color-text-accent);
+  color: var(--sl-color-text-accent);
+}
+
+/* The caption under a snippet: what `tflw check` prints for it (literal text, in mono, because it is
+   output and its backticks are characters), or the example a runtime code has. */
+.reference-page .tflw-says samp {
+  font-family: var(--sl-font-mono, var(--sl-font-system-mono));
+  font-size: 0.95em;
+  color: var(--sl-color-white);
+}
+
+.reference-page :is(.tflw-says, .tflw-example, .tflw-probe-as) {
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-2);
+  margin-top: 0.5rem;
+}
+
+.reference-page :is(.tflw-says, .tflw-example) > span:first-child {
+  font-size: var(--sl-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--sl-color-gray-3);
+  margin-inline-end: 0.5rem;
+}
+
+/* A flag on its own line, its effect beneath. The flag never breaks inside its token where the
+   column has room for it; below that it may, rather than push the page sideways. */
+.reference-page dl.tflw-flags > div {
+  padding-block: 0.5rem;
+  border-top: 1px solid var(--sl-color-hairline);
+}
+
+.reference-page dl.tflw-flags dt {
+  font-weight: 600;
+}
+
+.reference-page dl.tflw-flags dt code {
+  font-size: var(--sl-text-sm);
+}
+
+.reference-page dl.tflw-flags dd {
+  margin: 0.25rem 0 0;
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-2);
+}
+
+@media (min-width: 50rem) {
+  .reference-page dl.tflw-flags dt code {
+    white-space: nowrap;
+  }
+}
+
+/* The diagnostics filter (`MarkdownContent.astro`). */
+.reference-page .tflw-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.reference-page .tflw-filter input {
+  flex: 1 1 16rem;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  color: var(--sl-color-white);
+  background: var(--sl-color-gray-6);
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 6px;
+}
+
+.reference-page .tflw-filter input:focus-visible {
+  outline: 2px solid var(--sl-color-text-accent);
+  outline-offset: 1px;
+}
+
+.reference-page .tflw-filter output {
+  font-size: var(--sl-text-sm);
+  color: var(--sl-color-gray-3);
+}
+
+.reference-page .tflw-filtered {
+  display: none !important;
+}
+
+/* With an entry per code, the rail is an index of 87 lines; each stays one line, its lead cut short,
+   so the codes line up down the rail. */
+:root:has(.reference-page) starlight-toc a {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- /changelog: the earlier entries, folded (`M270`, `D-M270-6`) ---------- */
+/* `src/lib/changelog.mjs` keeps the newest entries open and folds the rest. The fold's own label is
+   the one control on a long page, so it reads as a button rather than a line of text. */
+.sl-markdown-content details.tflw-fold {
+  border: 0;
+  padding: 0;
+}
+
+.sl-markdown-content details.tflw-fold > summary {
+  cursor: pointer;
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 6px;
+  color: var(--sl-color-white);
+  font-size: var(--sl-text-sm);
+}
+
+.sl-markdown-content details.tflw-fold[open] > summary {
+  margin-bottom: 1rem;
 }

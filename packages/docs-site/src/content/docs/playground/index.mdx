@@ -6,8 +6,8 @@ import Playground from '../../../components/Playground.vue';
 
 # Playground
 
-Type a `.tflw` snippet and see live parse + check diagnostics — the same front-end
-`packages/lang` gives the CLI and the real [`tflw lsp`](/editor) (SPEC §14). This is parse+check
-only: nothing here sends a real request, and there's no backend behind this page at all.
+Write a `.tflw` file and see what `tflw check` says about it as you type: the same parser and the
+same checks the CLI and the [editor extension](/editor) run. Pick a starting point, or clear it and
+write your own. Nothing here sends a request: the page has no backend.
 
 <Playground client:only="vue" />

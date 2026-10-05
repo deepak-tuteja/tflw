@@ -1,5 +1,5 @@
-// The docs-site's one markdown-inline-code → `<code>` helper, shared by every reference page that
-// renders a `spec-data.ts` manifest into a plain HTML table.
+// The docs-site's one inline-markdown → HTML helper, shared by every reference page that renders a
+// `spec-data.ts` manifest, and by the page title.
 //
 // ## Why it is a module and not a line in each page
 //
@@ -19,11 +19,11 @@
 // probes and took it to 35 — a pre-existing bug found only because something downstream started
 // leaning on it harder. The alternation order is load-bearing: `` `` `` must be tried before `` ` ``.
 //
-// ## The output goes to `v-html`, so the input has to be escaped
+// ## The output is HTML, so the input has to be escaped
 //
-// `M147f` (`M147-12`), found by writing `M144-03`'s test. Every consumer is `<td v-html="code(…)"/>`,
-// which is `innerHTML` — so any `<` in a manifest string is markup, not text. **78 values across all
-// four pages carry one**, and they are not decoration: they are the placeholders that say what the
+// `M147f` (`M147-12`), found by writing `M144-03`'s test. Every consumer was
+// `<td v-html="code(…)"/>` on VitePress, and splices the same HTML string into the page now — so any
+// `<` in a manifest string is markup, not text. **78 values across all four pages carry one**, and they are not decoration: they are the placeholders that say what the
 // reader is supposed to type. `--env <name>` reached the page as `<code>--env <name></code>`, the
 // browser opened a `<name>` element nobody closed, and the flag's argument rendered as nothing at
 // all. The whole CLI reference is `--flag <arg>` rows.
@@ -34,12 +34,34 @@
 // checked, and asserted in `mdCode.test.mjs` so that stays true.
 const escapeHtml = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+// ## Strong and emphasis too (`M270`, `D-M270-7`)
+//
+// The manifests write `**strong**` (50 values) and `*emphasis*` (12) as well as code, and until
+// `M270` this function rendered code alone, so 101 raw `**` reached the diagnostics and CLI pages.
+// Those three constructs are the whole of the markdown the manifests use, measured; a gate in
+// `mdCode.test.mjs` fails on anything else markdown-like that survives, so a fourth construct is a
+// decision rather than a leak.
+//
+// Code spans are set aside first and put back last. Strong regularly wraps code
+// (``**`import` and `use` are an error**``), and a star inside a code span is the language's, not
+// emphasis. A star is only a delimiter where CommonMark would read it as one: the opening star is
+// followed by a non-space and the closing one preceded by one, so `3 * 4` stays literal.
+//
 // ## What still is not covered
 //
 // `M110b-02` filed the no-renderer-test gap alongside the duplication and `M144-03` tracked it.
 // `M144-03` is closed by unit-testing this function directly, over the doubled-fence and
 // inner-backtick cases and over every live manifest value — which is where the risk actually is and
-// needs no renderer. A true SSR render test, holding what vitepress serialises for a whole page, is
-// a separate and larger question about how much of the site to pin.
-export const code = (s: string): string =>
-  escapeHtml(s).replace(/``\s?([\s\S]+?)\s?``|`([^`]+)`/g, (_, doubled, single) => `<code>${doubled ?? single}</code>`);
+// needs no renderer.
+const HELD = '\uE000';
+export const inline = (s: string): string => {
+  const spans: string[] = [];
+  const held = escapeHtml(s).replace(/``\s?([\s\S]+?)\s?``|`([^`]+)`/g, (_, doubled, single) => {
+    spans.push(`<code>${doubled ?? single}</code>`);
+    return `${HELD}${spans.length - 1}${HELD}`;
+  });
+  return held
+    .replace(/\*\*(?=\S)([\s\S]+?)(?<=\S)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<![\w*])\*(?=[^\s*])([^*]+?)(?<=[^\s*])\*(?![\w*])/g, '<em>$1</em>')
+    .replace(new RegExp(`${HELD}(\\d+)${HELD}`, 'g'), (_, i) => spans[Number(i)]);
+};

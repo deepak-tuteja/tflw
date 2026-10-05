@@ -137,6 +137,24 @@ test('an edit survives the file — read a node, change a field, and the change 
   assert.match(text, /click button "Remove"/);
 });
 
+test('`M270-01`: a capture keeps its `matching` pattern through the row, untouched or renamed', () => {
+  /* The form has no field for `matching "<regex>"`, so the pattern rides on the node. Rebuilt
+     without it, opening the row and closing it wrote the plain capture back, and the test captured
+     the whole header instead of the id. Both directions: untouched, and with the one field the
+     form does have changed. */
+  const src = 'test "t"\n  api GET /a\n  capture header "location" matching "/orders/(\\\\d+)" as orderId\n';
+  const node = parseSource(src).program.tests[0]!.body[1]!;
+  const edit = statementEditOf(node);
+  assert.ok(edit && edit.kind === 'capture');
+  const text = (step: Step): string => (print(step) as { text: string }).text;
+  const asIs = buildStatement(edit, node);
+  assert.ok(asIs.ok, asIs.ok ? '' : asIs.reason);
+  assert.equal(text(asIs.node), text(node));
+  const renamed = buildStatement({ ...edit, name: 'id' }, node);
+  assert.ok(renamed.ok, renamed.ok ? '' : renamed.reason);
+  assert.equal(text(renamed.node), 'capture header "location" matching "/orders/(\\\\d+)" as id');
+});
+
 test('a builder’s refusal is the refusal the field shows, and it is reached through `validate`', () => {
   /**
    * **Mutation 7's vacuity control, and §5 asked for it by name.** A gate that reaches a refusal

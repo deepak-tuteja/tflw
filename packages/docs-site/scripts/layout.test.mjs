@@ -17,39 +17,19 @@
 //
 // Like `zoom.test.mjs` this drives the **built** site: a layout is not observable from the source.
 import assert from 'node:assert/strict';
-import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { extname, join, normalize, relative, sep } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, sep } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { DIST, serveDist } from './serve-dist.mjs';
 
-const DIST = fileURLToPath(new URL('../dist', import.meta.url));
 const RECORD = JSON.parse(readFileSync(new URL('./fixtures/published-urls.json', import.meta.url), 'utf8'));
 const SITE = 'https://deepak-tuteja.github.io/tflw/';
-const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.woff2': 'font/woff2' };
 
 /** Every published page, as the path a reader types: `guide/config`, `ui/`, `` for the home page. */
 const PAGES = Object.keys(RECORD.pages)
   .filter((file) => file !== '404.html')
   .map((file) => file.replace(/index\.html$/, '').replace(/\.html$/, ''));
-
-const serve = async () => {
-  const server = createServer((req, res) => {
-    const path = decodeURIComponent((req.url ?? '/').split('?')[0]).replace(/^\/tflw/, '');
-    let file = join(DIST, normalize(path).replace(/^(\.\.[/\\])+/, ''));
-    if (extname(file) === '' && existsSync(`${file}.html`)) file = `${file}.html`;
-    else if (!existsSync(file) || extname(file) === '') file = join(file, 'index.html');
-    if (!existsSync(file)) {
-      res.writeHead(404).end('not here');
-      return;
-    }
-    res.writeHead(200, { 'content-type': TYPES[extname(file)] ?? 'application/octet-stream' });
-    createReadStream(file).pipe(res);
-  });
-  await new Promise((done) => server.listen(0, '127.0.0.1', done));
-  return { server, base: `http://127.0.0.1:${server.address().port}/tflw/` };
-};
 
 /**
  * What a reader would see wrong with the page in front of them: how far it scrolls sideways, and each
@@ -85,7 +65,7 @@ const misplaced = () => {
 const WIDTHS = [390, 1440, 1920];
 
 test('no page scrolls sideways, and nothing in a page lands on the sidebar or the rail', async () => {
-  const { server, base } = await serve();
+  const { server, base } = await serveDist();
   const browser = await chromium.launch();
   try {
     const problems = [];
@@ -109,7 +89,7 @@ test('no page scrolls sideways, and nothing in a page lands on the sidebar or th
 test('the measure sees a collision: the VitePress breakout, put back on /ui/, is caught at 1440', async () => {
   // The vacuity control for the sweep above. A detector that never fires passes every page, so
   // this restores the exact rule `M269` carried over and asserts the detector names the shot.
-  const { server, base } = await serve();
+  const { server, base } = await serveDist();
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark' });
@@ -125,7 +105,7 @@ test('the measure sees a collision: the VitePress breakout, put back on /ui/, is
 });
 
 test('a /ui/ shot still breaks out of the text column where the pane has room, and only there', async () => {
-  const { server, base } = await serve();
+  const { server, base } = await serveDist();
   const browser = await chromium.launch();
   try {
     const widths = {};
@@ -178,17 +158,19 @@ test('nothing on the site is styled with a VitePress variable, and the playgroun
   walk(DIST);
   assert.deepEqual(leftovers, [], 'Starlight defines no --vp-* variable, so each of these resolves to nothing');
 
-  const { server, base } = await serve();
+  const { server, base } = await serveDist();
   const browser = await chromium.launch();
   try {
     for (const scheme of ['dark', 'light']) {
       const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, colorScheme: scheme });
       await page.goto(`${base}playground/`, { waitUntil: 'load' });
-      const editor = page.locator('.sl-markdown-content textarea');
+      // `M270`: the editor is a surface (`.pg-editor`) holding a transparent textarea over a
+      // highlighted layer, so the edge and the ground are the surface's and the face is the text's.
+      const editor = page.locator('.pg-editor');
       await editor.waitFor({ state: 'visible' });
       const look = await editor.evaluate((e) => {
         const s = getComputedStyle(e);
-        return { font: s.fontFamily, border: s.borderTopWidth, ground: s.backgroundColor, page: getComputedStyle(document.body).backgroundColor };
+        return { font: getComputedStyle(e.querySelector('textarea')).fontFamily, border: s.borderTopWidth, ground: s.backgroundColor, page: getComputedStyle(document.body).backgroundColor };
       });
       assert.match(look.font, /mono/i, `${scheme}: the editor is set in a monospace face`);
       assert.notEqual(look.border, '0px', `${scheme}: the editor has an edge`);

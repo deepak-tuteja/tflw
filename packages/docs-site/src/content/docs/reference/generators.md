@@ -1,4 +1,5 @@
 ---
+pageClass: reference-page
 title: Generators reference
 ---
 

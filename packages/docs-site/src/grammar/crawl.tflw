@@ -1,0 +1,10 @@
+crawl "the v1 API surface" as peer, shopper
+  seed openapi "/openapi.json"
+  seed traffic
+  seed spider "/admin"
+    max pages 200
+    max depth 3
+  exclude "/internal/**"
+  expect response has no authorization violations
+  expect response has no security violations
+  expect response has no input handling violations
